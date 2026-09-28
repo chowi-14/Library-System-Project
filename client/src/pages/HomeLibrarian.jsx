@@ -6,6 +6,16 @@ const initialBooks = [];
 
 const transactions = [];
 
+// ---------- Shared Tailwind class strings ----------
+const selectSm = "rounded-md border border-[#2b2b2b] bg-white px-2.5 py-[7px] text-[13px]";
+const inputBase =
+  "block w-full rounded border bg-white px-2.5 py-2 text-[13px] font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0b4a8b]";
+const btnBase = "cursor-pointer rounded-sm px-3 py-[9px] text-[13px] font-bold";
+const btnPrimary = `${btnBase} border border-[#eea51c] bg-[#eea51c] text-white hover:bg-[#d8940f]`;
+const btnSecondary = `${btnBase} border border-[#2b2b2b] bg-white text-[#1b1b1b] hover:bg-gray-100`;
+const btnDanger = `${btnBase} border border-[#c0121f] bg-[#c0121f] text-white hover:bg-[#9c0e19]`;
+const btnSmall = "cursor-pointer rounded-sm border border-[#2b2b2b] bg-white px-3.5 text-xs font-bold text-[#1b1b1b] hover:bg-gray-100";
+
 // ---------- Sortable table ----------
 
 // columns: [{ key, label, sortable?, render?(row) }]
@@ -30,16 +40,17 @@ function SortableTable({ columns, rows, defaultSort, emptyText }) {
 
   return (
     <>
-      <div className="sort-bar">
-        <label>
+      <div className="mb-2 flex items-center justify-end gap-2 text-[13px]">
+        <label className="flex items-center gap-2">
           Sort by
-          <select value={sort.key} onChange={(e) => setSort({ ...sort, key: e.target.value })}>
+          <select className={selectSm} value={sort.key} onChange={(e) => setSort({ ...sort, key: e.target.value })}>
             {sortable.map((c) => (
               <option key={c.key} value={c.key}>{c.label}</option>
             ))}
           </select>
         </label>
         <select
+          className={selectSm}
           aria-label="Sort order"
           value={sort.dir}
           onChange={(e) => setSort({ ...sort, dir: e.target.value })}
@@ -49,34 +60,50 @@ function SortableTable({ columns, rows, defaultSort, emptyText }) {
         </select>
       </div>
 
-      <div className="table-wrap">
-        <table>
+      <div className="overflow-x-auto rounded-[10px] border border-[#2b2b2b]">
+        <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr>
-              {columns.map((c) => (
-                <th key={c.key} aria-sort={sort.key === c.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
-                  {c.sortable ? (
-                    <button className="th-btn" onClick={() => toggle(c.key)}>
-                      {c.label}
-                      <span className="arrow">{sort.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
-                    </button>
-                  ) : (
-                    c.label
-                  )}
-                </th>
-              ))}
+              {columns.map((c) => {
+                const active = sort.key === c.key;
+                return (
+                  <th
+                    key={c.key}
+                    className="whitespace-nowrap border-b border-[#d8d8d8] px-2.5 py-3 text-center font-semibold"
+                    aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+                  >
+                    {c.sortable ? (
+                      <button
+                        className="inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent font-semibold hover:text-[#0b4a8b] focus-visible:text-[#0b4a8b] focus-visible:outline-none"
+                        onClick={() => toggle(c.key)}
+                      >
+                        {c.label}
+                        <span className={`text-[10px] ${active ? "text-[#0b4a8b]" : "text-gray-500"}`}>
+                          {active ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+                        </span>
+                      </button>
+                    ) : (
+                      c.label
+                    )}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
             {sorted.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.id} className="border-b border-[#eee] last:border-b-0 hover:bg-[#faf6f0]">
                 {columns.map((c) => (
-                  <td key={c.key}>{c.render ? c.render(row) : row[c.key]}</td>
+                  <td key={c.key} className="px-2.5 py-3 text-center">{c.render ? c.render(row) : row[c.key]}</td>
                 ))}
               </tr>
             ))}
             {sorted.length === 0 && (
-              <tr><td colSpan={columns.length} className="empty">{emptyText || "No results match your filters."}</td></tr>
+              <tr>
+                <td colSpan={columns.length} className="p-6 text-center text-gray-500">
+                  {emptyText || "No results match your filters."}
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
@@ -85,162 +112,7 @@ function SortableTable({ columns, rows, defaultSort, emptyText }) {
   );
 }
 
-// ---------- Page ----------
-
-const css = `
-:root {
-  /* Technicolor pastel palette */
-  --rose: #ffadad;
-  --peach: #ffd6a5;
-  --butter: #fdffb6;
-  --mint: #e4f1ee;
-  --sky: #d9edf8;
-  --lilac: #dedaf4;
-  /* Hogwarts palette */
-  --rookwood: #4a1f1f;
-  --blue: #0b4a8b;
-  --green: #0c7a43;
-  --gold: #b87a2b;
-  --sunflower: #eea51c;
-  --red: #c0121f;
-  --ink: #1b1b1b;
-  --line: #2b2b2b;
-  --bg: #ffffff;
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); }
-button, input, select { font: inherit; }
-
-/* Top bar */
-.topbar {
-  background: var(--rookwood);
-  color: #fff;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 24px;
-}
-.brand { display: flex; align-items: center; gap: 10px; }
-.crest {
-  width: 34px; height: 38px; display: grid; place-items: center;
-  background: var(--sunflower); color: var(--rookwood);
-  font-family: Georgia, serif; font-weight: 700;
-  clip-path: polygon(0 0, 100% 0, 100% 65%, 50% 100%, 0 65%);
-}
-.brand-name { font-family: Georgia, "Times New Roman", serif; font-size: 18px; }
-.brand-tag { font-size: 11px; font-weight: 600; opacity: .9; }
-.avatar {
-  width: 32px; height: 32px; border-radius: 50%; background: #fff; color: var(--rookwood);
-  display: grid; place-items: center; font-size: 16px;
-}
-
-/* Layout */
-.content { max-width: 1100px; margin: 0 auto; padding: 24px; }
-.title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-h1 { margin: 0; font-size: 34px; font-weight: 700; }
-h2 { margin: 0; font-size: 20px; font-weight: 700; }
-.add-btn {
-  background: var(--blue); color: #fff; border: 0; border-radius: 6px;
-  padding: 10px 18px; font-weight: 600; cursor: pointer;
-}
-.add-btn:hover { background: #083a6f; }
-
-/* Stat cards */
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 32px; }
-.stat { border-radius: 12px; padding: 14px 18px; display: flex; flex-direction: column; gap: 6px; }
-.stat span { font-size: 13px; font-weight: 600; }
-.stat strong { font-size: 32px; font-weight: 700; }
-
-/* Panels */
-.panel { margin-bottom: 40px; }
-.panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.panel-head input, .panel-head select, .sort-bar select {
-  border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; background: #fff; font-size: 13px;
-}
-.panel-head input { width: 240px; }
-
-.sort-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
-.sort-bar label { display: flex; align-items: center; gap: 8px; }
-
-/* Tables */
-.table-wrap { border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { padding: 12px 10px; font-weight: 600; text-align: center; border-bottom: 1px solid #d8d8d8; white-space: nowrap; }
-td { padding: 12px 10px; text-align: center; border-bottom: 1px solid #eee; }
-tbody tr:last-child td { border-bottom: 0; }
-tbody tr:hover { background: #faf6f0; }
-.th-btn { background: none; border: 0; cursor: pointer; font-weight: 600; display: inline-flex; gap: 4px; align-items: center; }
-.th-btn:hover, .th-btn:focus-visible { color: var(--blue); outline: none; }
-.arrow { font-size: 10px; color: #777; }
-th[aria-sort="ascending"] .arrow, th[aria-sort="descending"] .arrow { color: var(--blue); }
-.empty { padding: 24px; color: #777; }
-
-/* Covers */
-.cover { width: 34px; height: 50px; border-radius: 3px; position: relative; overflow: hidden; margin: 0 auto; }
-.cover span { position: absolute; left: 6px; right: 6px; bottom: 8px; height: 6px; border-radius: 2px; }
-
-/* Status badges */
-.badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #fff; }
-.badge.overdue { background: var(--red); }
-.badge.available, .badge.returned { background: var(--green); }
-.badge.not-returned { background: var(--sunflower); }
-
-/* Actions */
-.actions { display: inline-flex; gap: 10px; }
-.icon { background: none; border: 0; cursor: pointer; padding: 2px; display: inline-flex; }
-.icon:hover { opacity: .7; }
-.icon.edit { color: var(--ink); }
-.icon.del { color: var(--red); }
-
-/* Modal */
-.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; padding: 24px 16px; z-index: 50; overflow-y: auto; }
-.modal { background: #fff; width: 100%; max-width: 430px; margin: auto; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
-.modal-head { background: var(--rookwood); color: #fff; display: flex; justify-content: space-between; align-items: center; padding: 16px 22px; }
-.modal-head h2 { font-size: 18px; }
-.close { background: none; border: 0; color: #fff; font-size: 26px; line-height: 1; cursor: pointer; }
-.modal form { padding: 22px 24px 26px; display: flex; flex-direction: column; gap: 14px; }
-.row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
-.field label { display: block; font-weight: 700; font-size: 13px; }
-.field input, .field select, .field textarea {
-  display: block; width: 100%; margin-top: 6px; border: 1px solid var(--line); border-radius: 4px;
-  padding: 8px 10px; font-size: 13px; font-weight: 400; background: #fff; color: var(--ink);
-}
-.field textarea { min-height: 110px; resize: vertical; }
-.field ::placeholder { color: #aaa; }
-.field select.empty, .field input[type="date"].empty { color: #aaa; }
-.field input:focus, .field select:focus, .field textarea:focus { outline: 2px solid var(--blue); outline-offset: 0; }
-.field .invalid { border-color: var(--red); }
-.err { display: block; color: var(--red); font-size: 11.5px; }
-.field-foot { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-top: 4px; }
-.counter { margin-left: auto; font-size: 11.5px; color: #777; white-space: nowrap; }
-.counter.full { color: var(--red); font-weight: 700; }
-.modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 6px; }
-.btn-primary, .btn-secondary { padding: 9px 12px; font-weight: 700; font-size: 13px; cursor: pointer; border-radius: 2px; }
-.btn-primary { background: var(--sunflower); border: 1px solid var(--sunflower); color: #fff; }
-.btn-primary:hover { background: #d8940f; }
-.btn-secondary { background: #fff; border: 1px solid var(--line); color: var(--ink); }
-.btn-secondary:hover { background: #f4f4f4; }
-img.cover { display: block; object-fit: cover; }
-.modal.small { max-width: 380px; }
-.modal-body { padding: 22px 24px 26px; }
-.modal-body p { margin: 0 0 18px; font-size: 14px; line-height: 1.5; }
-.btn-danger { background: var(--red); border: 1px solid var(--red); color: #fff; padding: 9px 12px; font-weight: 700; font-size: 13px; cursor: pointer; border-radius: 2px; }
-.btn-danger:hover { background: #9c0e19; }
-.image-row { display: flex; gap: 8px; margin-top: 6px; }
-.image-row input { margin-top: 0; flex: 1; min-width: 0; }
-.btn-secondary.small { padding: 0 14px; font-size: 12px; }
-.preview { display: flex; align-items: center; gap: 10px; font-size: 11.5px; }
-.preview img { width: 40px; height: 58px; object-fit: cover; border: 1px solid var(--line); border-radius: 3px; }
-.preview .ok { color: var(--green); }
-
-@media (max-width: 760px) {
-  .stats { grid-template-columns: repeat(2, 1fr); }
-  .title-row h1 { font-size: 26px; }
-  .panel-head { flex-direction: column; align-items: stretch; gap: 8px; }
-  .panel-head input { width: 100%; }
-  .row { grid-template-columns: 1fr; }
-}
-`;
+// ---------- Small pieces ----------
 
 const fmt = (iso) =>
   iso
@@ -266,22 +138,44 @@ const TrashIcon = () => (
 const Cover = ({ colors, image }) => {
   const [failed, setFailed] = useState(false);
   if (image && !failed) {
-    return <img className="cover" src={image} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} />;
+    return (
+      <img
+        className="mx-auto block h-[50px] w-[34px] rounded-[3px] object-cover"
+        src={image}
+        alt=""
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+      />
+    );
   }
   return (
-    <div className="cover" style={{ background: colors[0] }}>
-      <span style={{ background: colors[1] }} />
+    <div className="relative mx-auto h-[50px] w-[34px] overflow-hidden rounded-[3px]" style={{ background: colors[0] }}>
+      <span className="absolute inset-x-1.5 bottom-2 h-1.5 rounded-sm" style={{ background: colors[1] }} />
     </div>
   );
 };
 
+const BADGE_COLORS = {
+  overdue: "bg-[#c0121f]",
+  available: "bg-[#0c7a43]",
+  returned: "bg-[#0c7a43]",
+  "not-returned": "bg-[#eea51c]",
+};
+
 const Badge = ({ status, overdue }) => {
   const kind = overdue ? "overdue" : status.toLowerCase().replace(" ", "-");
-  return <span className={`badge ${kind}`}>{overdue && status === "Not Returned" ? "Not Returned" : status}</span>;
+  return (
+    <span className={`inline-block rounded-full px-2.5 py-[3px] text-[11px] font-bold text-white ${BADGE_COLORS[kind]}`}>
+      {status}
+    </span>
+  );
 };
+
+// ---------- Validation ----------
 
 const CATEGORIES = ["Fiction", "Non-Fiction", "Science Fiction", "Fantasy", "Mystery", "Biography", "History", "Science"];
 const EMPTY_FORM = { title: "", author: "", publisher: "", category: "", published: "", description: "", image: "" };
+const DESC_MAX = 300;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 const validate = (f) => {
@@ -308,7 +202,7 @@ const validate = (f) => {
   const desc = f.description.trim();
   if (!desc) e.description = "Description is required.";
   else if (desc.length < 10) e.description = "Write at least 10 characters.";
-  else if (desc.length > 300) e.description = "Keep it under 300 characters.";
+  else if (desc.length > DESC_MAX) e.description = "Keep it under 300 characters.";
 
   const img = f.image.trim();
   if (img) {
@@ -322,18 +216,48 @@ const validate = (f) => {
   return e;
 };
 
-const DESC_MAX = 300;
+// ---------- Modals ----------
+
+function Modal({ title, titleId, onClose, small, role = "dialog", describedBy, children }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex overflow-y-auto bg-black/[.55] px-4 py-6"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        className={`m-auto w-full bg-white shadow-[0_10px_40px_rgba(0,0,0,0.35)] ${small ? "max-w-[380px]" : "max-w-[430px]"}`}
+        role={role}
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={describedBy}
+      >
+        <div className="flex items-center justify-between bg-[#4a1f1f] px-[22px] py-4 text-white">
+          <h2 id={titleId} className="text-lg font-bold">{title}</h2>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="cursor-pointer border-0 bg-transparent text-[26px] leading-none text-white"
+          >
+            ×
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 function Field({ label, error, counter, children }) {
   return (
-    <div className="field">
-      <label>
+    <div>
+      <label className="block text-[13px] font-bold">
         {label}
-        {children}
+        <div className="mt-1.5">{children}</div>
       </label>
       {(error || counter) && (
-        <div className="field-foot">
-          {error ? <span className="err" role="alert">{error}</span> : <span />}
+        <div className="mt-1 flex items-start justify-between gap-2">
+          {error ? <span className="block text-[11.5px] font-normal text-[#c0121f]" role="alert">{error}</span> : <span />}
           {counter}
         </div>
       )}
@@ -382,14 +306,14 @@ function BookFormModal({ book, onClose, onSave }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const err = (k) => touched[k] && errors[k];
   const bind = (k) => ({
     value: form[k],
     onChange: (e) => setForm({ ...form, [k]: e.target.value }),
     onBlur: () => setTouched({ ...touched, [k]: true }),
-    className: (touched[k] && errors[k] ? "invalid " : "") + (form[k] ? "" : "empty"),
-    "aria-invalid": !!(touched[k] && errors[k]),
+    className: `${inputBase} ${err(k) ? "border-[#c0121f]" : "border-[#2b2b2b]"} ${form[k] ? "text-[#1b1b1b]" : "text-gray-400"}`,
+    "aria-invalid": !!err(k),
   });
-  const err = (k) => touched[k] && errors[k];
 
   const submit = (e) => {
     e.preventDefault();
@@ -406,83 +330,95 @@ function BookFormModal({ book, onClose, onSave }) {
     });
   };
 
+  const full = form.description.length >= DESC_MAX;
+
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="add-book-title">
-        <div className="modal-head">
-          <h2 id="add-book-title">{editing ? "Edit Book" : "Add Book"}</h2>
-          <button type="button" className="close" aria-label="Close" onClick={onClose}>×</button>
+    <Modal title={editing ? "Edit Book" : "Add Book"} titleId="book-form-title" onClose={onClose}>
+      <form onSubmit={submit} noValidate className="flex flex-col gap-3.5 px-6 pt-[22px] pb-[26px]">
+        <Field label="Book Title" error={err("title")}>
+          <input ref={firstRef} type="text" placeholder="Enter a Book Title" {...bind("title")} />
+        </Field>
+
+        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+          <Field label="Author Name" error={err("author")}>
+            <input type="text" placeholder="Enter a Author Name" {...bind("author")} />
+          </Field>
+          <Field label="Publisher" error={err("publisher")}>
+            <input type="text" placeholder="Enter a Publisher Name" {...bind("publisher")} />
+          </Field>
         </div>
 
-        <form onSubmit={submit} noValidate>
-          <Field label="Book Title" error={err("title")}>
-            <input ref={firstRef} type="text" placeholder="Enter a Book Title" {...bind("title")} />
+        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+          <Field label="Category" error={err("category")}>
+            <select {...bind("category")}>
+              <option value="" disabled>Choose a Category</option>
+              {CATEGORIES.map((c) => <option key={c} className="text-[#1b1b1b]">{c}</option>)}
+            </select>
           </Field>
-
-          <div className="row">
-            <Field label="Author Name" error={err("author")}>
-              <input type="text" placeholder="Enter a Author Name" {...bind("author")} />
-            </Field>
-            <Field label="Publisher" error={err("publisher")}>
-              <input type="text" placeholder="Enter a Publisher Name" {...bind("publisher")} />
-            </Field>
-          </div>
-
-          <div className="row">
-            <Field label="Category" error={err("category")}>
-              <select {...bind("category")}>
-                <option value="" disabled>Choose a Category</option>
-                {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-              </select>
-            </Field>
-            <Field label="Date Published" error={err("published")}>
-              <input type="date" max={todayISO()} {...bind("published")} />
-            </Field>
-          </div>
-
-          <Field
-            label="Description"
-            error={err("description")}
-            counter={<span className={"counter" + (form.description.length >= DESC_MAX ? " full" : "")}>{form.description.length}/{DESC_MAX}</span>}
-          >
-            <textarea placeholder="Enter a short description..." maxLength={DESC_MAX} {...bind("description")} />
+          <Field label="Date Published" error={err("published")}>
+            <input type="date" max={todayISO()} {...bind("published")} />
           </Field>
+        </div>
 
-          <Field label="Image Upload" error={fileError || err("image")}>
-            <div className="image-row">
-              <input
-                type="text"
-                placeholder="Image Link"
-                {...bind("image")}
-                value={upload ? upload.name : form.image}
-                readOnly={!!upload}
-              />
-              {upload ? (
-                <button type="button" className="btn-secondary small" onClick={clearUpload}>Remove</button>
-              ) : (
-                <button type="button" className="btn-secondary small" onClick={() => fileRef.current?.click()}>Browse</button>
-              )}
-            </div>
-          </Field>
-          <input ref={fileRef} type="file" accept="image/*" hidden onChange={pickFile} />
-          {previewSrc && (
-            <div className="preview">
-              <img src={previewSrc} alt="Cover preview" referrerPolicy="no-referrer" onLoad={() => setImgOk(true)} onError={() => setImgOk(false)} />
-              <span className={imgOk === false ? "err" : "ok"}>
-                {imgOk === false
-                  ? "Couldn't load this image. Use a direct image link (ends in .jpg or .png), or browse a file."
-                  : imgOk ? "Image loaded." : "Loading preview..."}
-              </span>
-            </div>
-          )}
+        <Field
+          label="Description"
+          error={err("description")}
+          counter={
+            <span className={`ml-auto whitespace-nowrap text-[11.5px] ${full ? "font-bold text-[#c0121f]" : "font-normal text-gray-500"}`}>
+              {form.description.length}/{DESC_MAX}
+            </span>
+          }
+        >
+          <textarea
+            placeholder="Enter a short description..."
+            maxLength={DESC_MAX}
+            {...bind("description")}
+            className={`${bind("description").className} min-h-[110px] resize-y`}
+          />
+        </Field>
 
-          <div className="modal-actions">
-            <button type="submit" className="btn-primary">{editing ? "Edit Book" : "Add Book"}</button>
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+        <Field label="Image Upload" error={fileError || err("image")}>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Image Link"
+              {...bind("image")}
+              className={`${bind("image").className} min-w-0 flex-1`}
+              value={upload ? upload.name : form.image}
+              readOnly={!!upload}
+            />
+            {upload ? (
+              <button type="button" className={btnSmall} onClick={clearUpload}>Remove</button>
+            ) : (
+              <button type="button" className={btnSmall} onClick={() => fileRef.current?.click()}>Browse</button>
+            )}
           </div>
-        </form>
-      </div>
-    </div>
+        </Field>
+        <input ref={fileRef} type="file" accept="image/*" hidden onChange={pickFile} />
+        {previewSrc && (
+          <div className="flex items-center gap-2.5 text-[11.5px]">
+            <img
+              className="h-[58px] w-[40px] rounded-[3px] border border-[#2b2b2b] object-cover"
+              src={previewSrc}
+              alt="Cover preview"
+              referrerPolicy="no-referrer"
+              onLoad={() => setImgOk(true)}
+              onError={() => setImgOk(false)}
+            />
+            <span className={imgOk === false ? "text-[#c0121f]" : "text-[#0c7a43]"}>
+              {imgOk === false
+                ? "Couldn't load this image. Use a direct image link (ends in .jpg or .png), or browse a file."
+                : imgOk ? "Image loaded." : "Loading preview..."}
+            </span>
+          </div>
+        )}
+
+        <div className="mt-1.5 grid grid-cols-2 gap-6">
+          <button type="submit" className={btnPrimary}>{editing ? "Edit Book" : "Add Book"}</button>
+          <button type="button" className={btnSecondary} onClick={onClose}>Cancel</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -497,25 +433,21 @@ function ConfirmDeleteModal({ book, onCancel, onConfirm }) {
   }, [onCancel]);
 
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
-      <div className="modal small" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-desc">
-        <div className="modal-head">
-          <h2 id="delete-title">Delete Book</h2>
-          <button type="button" className="close" aria-label="Close" onClick={onCancel}>×</button>
-        </div>
-        <div className="modal-body">
-          <p id="delete-desc">
-            Delete <strong>{book.title}</strong> from the catalog? This can't be undone.
-          </p>
-          <div className="modal-actions">
-            <button type="button" className="btn-danger" onClick={onConfirm}>Delete</button>
-            <button type="button" className="btn-secondary" ref={cancelRef} onClick={onCancel}>Cancel</button>
-          </div>
+    <Modal title="Delete Book" titleId="delete-title" describedBy="delete-desc" role="alertdialog" small onClose={onCancel}>
+      <div className="px-6 pt-[22px] pb-[26px]">
+        <p id="delete-desc" className="mb-[18px] text-sm leading-normal">
+          Delete <strong>{book.title}</strong> from the catalog? This can't be undone.
+        </p>
+        <div className="grid grid-cols-2 gap-6">
+          <button type="button" className={btnDanger} onClick={onConfirm}>Delete</button>
+          <button type="button" className={btnSecondary} ref={cancelRef} onClick={onCancel}>Cancel</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
+
+// ---------- Page ----------
 
 export default function HomeLibrarian() {
   const [books, setBooks] = useState(initialBooks);
@@ -533,10 +465,10 @@ export default function HomeLibrarian() {
   const borrowedCount = transactions.filter((t) => t.status === "Not Returned").length;
   const overdueCount = transactions.filter((t) => t.overdue).length;
   const liveStats = [
-    { label: "Total Books", value: books.length, color: "var(--mint)" },
-    { label: "Borrowed", value: borrowedCount, color: "var(--lilac)" },
-    { label: "Overdue", value: overdueCount, color: "var(--rose)" },
-    { label: "Available", value: availableCount, color: "var(--peach)" },
+    { label: "Total Books", value: books.length, bg: "bg-[#e4f1ee]" },
+    { label: "Borrowed", value: borrowedCount, bg: "bg-[#dedaf4]" },
+    { label: "Overdue", value: overdueCount, bg: "bg-[#ffadad]" },
+    { label: "Available", value: availableCount, bg: "bg-[#ffd6a5]" },
   ];
   const saveEdit = (f) => {
     setBooks((prev) => prev.map((b) => (b.id === toEdit.id ? { ...b, ...f } : b)));
@@ -564,9 +496,21 @@ export default function HomeLibrarian() {
       key: "actions",
       label: "Actions",
       render: (r) => (
-        <span className="actions">
-          <button aria-label={`Edit ${r.title}`} className="icon edit" onClick={() => setToEdit(r)}><EditIcon /></button>
-          <button aria-label={`Delete ${r.title}`} className="icon del" onClick={() => setToDelete(r)}><TrashIcon /></button>
+        <span className="inline-flex gap-2.5">
+          <button
+            aria-label={`Edit ${r.title}`}
+            className="inline-flex cursor-pointer border-0 bg-transparent p-0.5 text-[#1b1b1b] hover:opacity-70"
+            onClick={() => setToEdit(r)}
+          >
+            <EditIcon />
+          </button>
+          <button
+            aria-label={`Delete ${r.title}`}
+            className="inline-flex cursor-pointer border-0 bg-transparent p-0.5 text-[#c0121f] hover:opacity-70"
+            onClick={() => setToDelete(r)}
+          >
+            <TrashIcon />
+          </button>
         </span>
       ),
     },
@@ -583,42 +527,52 @@ export default function HomeLibrarian() {
   ];
 
   return (
-    <div className="app">
-      <style>{css}</style>
-      <header className="topbar">
-        <div className="brand">
-          <div className="crest" aria-hidden="true">H</div>
+    <div className="min-h-screen bg-white font-sans text-[#1b1b1b]">
+      <header className="flex items-center justify-between bg-[#4a1f1f] px-6 py-2.5 text-white">
+        <div className="flex items-center gap-2.5">
+          <div
+            className="grid h-[38px] w-[34px] place-items-center bg-[#eea51c] font-serif font-bold text-[#4a1f1f] [clip-path:polygon(0_0,100%_0,100%_65%,50%_100%,0_65%)]"
+            aria-hidden="true"
+          >
+            H
+          </div>
           <div>
-            <div className="brand-name">Hogwarts Library</div>
-            <div className="brand-tag">Knowledge is the truest magic.</div>
+            <div className="font-serif text-lg">Hogwarts Library</div>
+            <div className="text-[11px] font-semibold opacity-90">Knowledge is the truest magic.</div>
           </div>
         </div>
-        <div className="avatar" aria-label="Account">👤</div>
+        <div className="grid h-8 w-8 place-items-center rounded-full bg-white text-base text-[#4a1f1f]" aria-label="Account">👤</div>
       </header>
 
-      <main className="content">
-        <div className="title-row">
-          <h1>Librarian Dashboard</h1>
-          <button className="add-btn" onClick={() => setShowModal(true)}>+ Add Book</button>
+      <main className="mx-auto max-w-[1100px] p-6">
+        <div className="mb-5 flex items-center justify-between">
+          <h1 className="text-[26px] font-bold md:text-[34px]">Librarian Dashboard</h1>
+          <button
+            className="cursor-pointer rounded-md border-0 bg-[#0b4a8b] px-[18px] py-2.5 font-semibold text-white hover:bg-[#083a6f]"
+            onClick={() => setShowModal(true)}
+          >
+            + Add Book
+          </button>
         </div>
 
-        <section className="stats">
+        <section className="mb-8 grid grid-cols-2 gap-5 md:grid-cols-4">
           {liveStats.map((s) => (
-            <div key={s.label} className="stat" style={{ background: s.color }}>
-              <span>{s.label}</span>
-              <strong>{s.value}</strong>
+            <div key={s.label} className={`flex flex-col gap-1.5 rounded-xl px-[18px] py-3.5 ${s.bg}`}>
+              <span className="text-[13px] font-semibold">{s.label}</span>
+              <strong className="text-[32px] font-bold">{s.value}</strong>
             </div>
           ))}
         </section>
 
-        <section className="panel">
-          <div className="panel-head">
-            <h2>Book Catalog</h2>
+        <section className="mb-10">
+          <div className="mb-3 flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between">
+            <h2 className="text-xl font-bold">Book Catalog</h2>
             <input
               type="search"
               placeholder="Search by title or author"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              className={`${selectSm} w-full md:w-60`}
             />
           </div>
           <SortableTable
@@ -629,10 +583,10 @@ export default function HomeLibrarian() {
           />
         </section>
 
-        <section className="panel">
-          <div className="panel-head">
-            <h2>Transaction History</h2>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status">
+        <section className="mb-10">
+          <div className="mb-3 flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between">
+            <h2 className="text-xl font-bold">Transaction History</h2>
+            <select className={selectSm} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status">
               <option>All Statuses</option>
               <option>Not Returned</option>
               <option>Returned</option>
