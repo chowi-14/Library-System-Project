@@ -58,9 +58,7 @@ export default function Login() {
           <img src={illustration} alt="Students in the Hogwarts library" className="w-full max-w-lg" />
         </div>
 
-        {/* RIGHT — form */}
         <div className="mx-auto w-full max-w-sm">
-          {/* Logo + title */}
           <div className="mb-6 flex items-center gap-4">
               <img src={crest} alt="Hogwarts crest" className="h-24 w-20 shrink-0 object-contain" />
             <h1 className="text-5xl leading-[0.95] text-black">
