@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import crest from "../assets/crest.webp"
 
 // ---------- Data ----------
 // cover = [background, accent] colors used for the placeholder book cover
@@ -530,12 +531,11 @@ export default function HomeLibrarian() {
     <div className="min-h-screen bg-white font-sans text-[#1b1b1b]">
       <header className="flex items-center justify-between bg-[#4a1f1f] px-6 py-2.5 text-white">
         <div className="flex items-center gap-2.5">
-          <div
-            className="grid h-[38px] w-[34px] place-items-center bg-[#eea51c] font-serif font-bold text-[#4a1f1f] [clip-path:polygon(0_0,100%_0,100%_65%,50%_100%,0_65%)]"
-            aria-hidden="true"
-          >
-            H
-          </div>
+          <img
+              src={crest}
+              alt="Hogwarts Library crest"
+              className="h-9.5 w-auto object-contain"
+            />
           <div>
             <div className="font-serif text-lg">Hogwarts Library</div>
             <div className="text-[11px] font-semibold opacity-90">Knowledge is the truest magic.</div>
