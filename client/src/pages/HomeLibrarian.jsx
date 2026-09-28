@@ -285,7 +285,7 @@ function BookFormModal({ book, onClose, onSave }) {
   const errors = validate(upload ? { ...form, image: "" } : form);
   const previewSrc = upload ? upload.data : form.image.trim() && !errors.image ? form.image.trim() : "";
 
-  useEffect(() => { setImgOk(null); }, [previewSrc]);
+  // useEffect(() => { setImgOk(null); }, [previewSrc]);
 
   const pickFile = (e) => {
     const file = e.target.files?.[0];
