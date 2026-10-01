@@ -317,13 +317,13 @@ function TransactionsView({ borrowed, history, onReturn }) {
   const isOverdue = (due) => parse(due) < today;
 
   const tabClass = (name) =>
-    `border-b-2 px-1 pb-1 text-sm font-bold ${
+    `border-b-2 px-2 pb-2 text-lg font-bold ${
       tab === name ? "border-[#4a1a1f]" : "border-transparent hover:border-gray-400"
     }`;
 
   return (
     <main className="w-full flex-1 px-[7%] py-8">
-      <div className="flex gap-10 border-b border-gray-400">
+      <div className="flex gap-12 border-b border-gray-400">
         <button type="button" onClick={() => setTab("borrowed")} className={tabClass("borrowed")}>
           Borrowed Books
         </button>
