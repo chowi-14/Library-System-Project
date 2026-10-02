@@ -1,6 +1,7 @@
+import { useNavigate } from "react-router-dom";
 import crest from "../assets/crest.webp";
 
-// Solid profile icon: white circle with a cut-out person
+
 function ProfileIcon({ size = 34 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
@@ -11,21 +12,23 @@ function ProfileIcon({ size = 34 }) {
   );
 }
 
-// active: "home" | "transactions"; onNavigate("home" | "transactions")
-export default function Navbar({ active = "home", onNavigate }) {
+
+export default function Navbar({ role = "student", active = "home", onNavigate, onProfile }) {
+  const navigate = useNavigate();
+  const isLibrarian = role === "librarian";
+
   const linkClass = (name) =>
     `border-b pb-1 text-[17px] text-white ${
       active === name ? "border-white" : "border-transparent hover:border-white/60"
     }`;
 
+  const openProfile = onProfile ?? (() => navigate(`/${role}/profile`));
+  const goHome = () => (isLibrarian ? navigate("/librarian") : onNavigate?.("home"));
+
   return (
     <header className="bg-[#4a1a1f] font-serif">
       <nav className="grid grid-cols-[1fr_auto_1fr] items-center px-[4%] py-2.5">
-        <button
-          type="button"
-          onClick={() => onNavigate?.("home")}
-          className="flex items-center gap-2.5 justify-self-start"
-        >
+        <button type="button" onClick={goHome} className="flex items-center gap-2.5 justify-self-start">
           <img src={crest} alt="Hogwarts crest" className="h-12 w-12 object-contain" />
           <span className="text-left text-lg leading-tight text-white">
             Hogwarts
@@ -34,16 +37,20 @@ export default function Navbar({ active = "home", onNavigate }) {
           </span>
         </button>
 
-        <div className="flex gap-24">
-          <button type="button" onClick={() => onNavigate?.("home")} className={linkClass("home")}>
-            Home
-          </button>
-          <button type="button" onClick={() => onNavigate?.("transactions")} className={linkClass("transactions")}>
-            Transactions
-          </button>
-        </div>
+        {isLibrarian ? (
+          <div />
+        ) : (
+          <div className="flex gap-24">
+            <button type="button" onClick={() => onNavigate?.("home")} className={linkClass("home")}>
+              Home
+            </button>
+            <button type="button" onClick={() => onNavigate?.("transactions")} className={linkClass("transactions")}>
+              Transactions
+            </button>
+          </div>
+        )}
 
-        <button type="button" aria-label="Profile" className="justify-self-end">
+        <button type="button" onClick={openProfile} aria-label="Profile" className="justify-self-end">
           <ProfileIcon />
         </button>
       </nav>

@@ -14,6 +14,15 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE_RE = /^(09\d{9}|\+639\d{9})$/; 
 const NAME_RE = /^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .'-]*$/;
 
+// Same eye icon used on the Login page
+const EyeIcon = ({ off }) => (
+  <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+    <path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z" />
+    <circle cx="12" cy="12" r="3" />
+    {off && <path d="M3 3l18 18" strokeLinecap="round" />}
+  </svg>
+);
+
 const validate = (v) => {
   const e = {};
 
@@ -56,6 +65,8 @@ const initialValues = {
 };
 
 function Field({ icon: Icon, name, type = "text", placeholder, values, errors, touched, onChange, onBlur }) {
+  const [showPassword, setShowPassword] = useState(false);
+  const isPassword = type === "password";
   const showError = touched[name] && errors[name];
   return (
     <div>
@@ -67,7 +78,7 @@ function Field({ icon: Icon, name, type = "text", placeholder, values, errors, t
         {Icon && <Icon size={18} className="shrink-0 text-[#f3d9c0]" />}
         <input
           name={name}
-          type={type}
+          type={isPassword && showPassword ? "text" : type}
           value={values[name]}
           placeholder={placeholder}
           onChange={onChange}
@@ -76,6 +87,16 @@ function Field({ icon: Icon, name, type = "text", placeholder, values, errors, t
           aria-describedby={showError ? `${name}-error` : undefined}
           className="w-full bg-transparent text-lg text-[#f3d9c0] placeholder:text-[#f3d9c0]/60 outline-none"
         />
+        {isPassword && (
+          <button
+            type="button"
+            onClick={() => setShowPassword((s) => !s)}
+            aria-label={showPassword ? "Hide password" : "Show password"}
+            className="shrink-0 text-[#f3d9c0]"
+          >
+            <EyeIcon off={showPassword} />
+          </button>
+        )}
       </div>
       {showError && (
         <p id={`${name}-error`} className="mt-1 text-sm text-red-300">
