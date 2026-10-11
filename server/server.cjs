@@ -8,6 +8,7 @@ const app = express()
 
 app.use(cors())
 app.use(express.json())
+app.use('/api/auth', require('./routes/auth.cjs'))
 
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log('Connected to MongoDB Atlas'))

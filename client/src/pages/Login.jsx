@@ -52,11 +52,11 @@ export default function Login() {
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const res = login(form.email.trim(), form.password)
-    if (!res.ok) return setError(res.error)
-      navigate("/home", { replace: true})
+    const res = await login(form.email.trim().toLowerCase(), form.password);
+    if (!res.ok) return setError(res.error);
+    navigate("/home", { replace: true });
   };
 
   return (

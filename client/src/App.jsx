@@ -1,11 +1,11 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import "./App.css";
+import { AuthProvider } from "./context/AuthContext";
+import { useAuth } from "./context/useAuth";
 import Login from "./pages/Login";
 import SignUp from "./pages/SignUp";
 import HomeStudent from "./pages/HomeStudent";
 import HomeLibrarian from "./pages/HomeLibrarian";
-import AuthProvider from "./context/AuthContext";
-import { useAuth } from "./context/useAuth";
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth();

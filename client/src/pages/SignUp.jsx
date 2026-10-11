@@ -173,7 +173,7 @@ export default function SignUp() {
     setStep("form");
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const found = validate(values);
     setErrors(found);
@@ -181,13 +181,10 @@ export default function SignUp() {
     if (Object.keys(found).length > 0) return
 
     const { firstName, lastName, email, phone, password } = values;
-    const res = register({
-      role,
-      firstName,
-      lastName,
+    const res = await register({
+      role, firstName, lastName,
       email: email.trim().toLowerCase(),
-      phone,
-      password,
+      phone, password,
     });
     if (!res.ok) return setSubmitError(res.error);
     navigate("/login");

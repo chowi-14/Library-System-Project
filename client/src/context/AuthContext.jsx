@@ -1,49 +1,50 @@
 import { useState } from "react";
 import { AuthContext } from "./authContext1";
 
-const read = (key, fallback) => {
-    try { 
-        return JSON.parse(localStorage.getItem(key)) ?? fallback; 
+const API = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
+
+const post = async (path, body) => {
+    try {
+        const res = await fetch(`${API}${path}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        return res.ok ? { ok: true, data } : { ok: false, error: data.error || "Something went wrong." };
+    } catch {
+        return { ok: false, error: "Cannot reach the server." };
     }
-    catch {
-        return fallback; 
-    }
-}
+};
 
-export default function AuthProvider({ children }) {
-    const [user, setUser] = useState(() => read("session", null))
+const readSession = () => {
+    try { return JSON.parse(localStorage.getItem("session")); }
+    catch { return null; }
+};
 
-    const register = (data) => {
-        const users = read("users", [])
-        if (users.som((u) => u.email === data.email))
-            return { ok: false, error: "Email is already registered."}
-        localStorage.setItem("users", JSON.stringify([...users, data]))
-        return { ok: true }
-    }
+export function AuthProvider({ children }) {
+    const [user, setUser] = useState(readSession);
 
-    const login = (email, password) => {
-        const found = read("users", []).find(
-            (u) => u.email === email && u.password === password
-        )
+    const register = (data) => post("/auth/register", data);
 
-        if(!found) return { ok: false, error: "Invalid email or password."}
-        
-        const session = {...found}
-        delete session.password
-
-        localStorage.setItem("session", JSON.stringify(session))
-        setUser(session)
-        return {ok: true}
-    }
+    const login = async (email, password) => {
+        const res = await post("/auth/login", { email, password });
+        if (!res.ok) return res;
+        localStorage.setItem("token", res.data.token);
+        localStorage.setItem("session", JSON.stringify(res.data.user));
+        setUser(res.data.user);
+        return { ok: true };
+    };
 
     const logout = () => {
-        localStorage.removeItem("session")
-        setUser(null)
-    }
+        localStorage.removeItem("token");
+        localStorage.removeItem("session");
+        setUser(null);
+    };
 
-  return (
-    <AuthContext.Provider value = {{user, register, login, logout}}>
+    return (
+        <AuthContext.Provider value={{ user, register, login, logout }}>
         {children}
-    </AuthContext.Provider>
-  )
+        </AuthContext.Provider>
+    );
 }
