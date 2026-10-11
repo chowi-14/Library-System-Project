@@ -1,6 +1,8 @@
 import { useState } from "react";
 import illustration from "../assets/illustration.webp"
 import crest from "../assets/crest.webp"
+import { useAuth } from "../context/useAuth";
+import { Link, useNavigate } from "react-router-dom";
 
 const UserIcon = () => (
   <svg viewBox="0 0 24 24" className="h-6 w-6 shrink-0" fill="currentColor" aria-hidden="true">
@@ -43,12 +45,18 @@ function UnderlineInput({ icon, type = "text", placeholder, value, onChange, nam
 export default function Login() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("")
+
+  const navigate = useNavigate()
+  const { login } = useAuth()
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    console.log(form);
+    const res = login(form.email.trim(), form.password)
+    if (!res.ok) return setError(res.error)
+      navigate("/home", { replace: true})
   };
 
   return (
@@ -71,9 +79,7 @@ export default function Login() {
           <h2 className="text-2xl text-black">Welcome back to Hogwarts Library</h2>
           <p className="mt-3 text-sm text-black">
             New here?{" "}
-            <a href="/register" className="underline underline-offset-2">
-              Create Account
-            </a>
+            <Link to="/signup" className="underline underline-offset-2">Create Account</Link>
           </p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-6">
@@ -104,6 +110,8 @@ export default function Login() {
                 </button>
               }
             />
+
+            {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
 
             <button
               type="submit"
