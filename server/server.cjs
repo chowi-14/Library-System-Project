@@ -7,8 +7,17 @@ require('dotenv').config()
 const app = express()
 
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '3mb' })) 
 app.use('/api/auth', require('./routes/auth.cjs'))
+app.use('/api/books', require('./routes/bookRoutes.cjs'))
+
+app.use((err, _req, res, _next) => {
+    console.error(err)
+    if (err.type === 'entity.too.large')
+        return res.status(413).json({ error: 'Image is too large.' })
+    res.status(err.status || 500).json({ error: err.message || 'Server error.' })
+})
+
 
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log('Connected to MongoDB Atlas'))

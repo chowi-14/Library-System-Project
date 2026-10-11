@@ -1,0 +1,67 @@
+const express = require('express')
+const mongoose = require('mongoose')
+const router = express.Router()
+const Book = require('../models/Book.cjs')
+const auth = require('../middleware/auth.cjs')
+
+const requireLibrarian = (req, res, next) =>
+    req.user.role === 'librarian'
+        ? next()
+        : res.status(403).json({ error: 'Librarians only.' })
+
+const FIELDS = ['title', 'author', 'publisher', 'category', 'published', 'description', 'image']
+const pick = (body) =>
+    Object.fromEntries(FIELDS.filter((k) => body[k] !== undefined).map((k) => [k, body[k]]))
+
+const checkId = (req, res, next) =>
+    mongoose.isValidObjectId(req.params.id)
+        ? next()
+        : res.status(400).json({ error: 'Invalid book id.' })
+
+router.get('/', auth, async (_req, res) => {
+    try {
+        res.json(await Book.find().sort({ title: 1 }))
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Server error.' })
+    }
+})
+
+router.post('/', auth, requireLibrarian, async (req, res) => {
+    try {
+        const book = await Book.create({ ...pick(req.body), added_by: req.user.id })
+        res.status(201).json(book)
+    } catch (err) {
+        if (err.name === 'ValidationError') return res.status(400).json({ error: err.message })
+        console.error(err)
+        res.status(500).json({ error: 'Server error.' })
+    }
+})
+
+router.put('/:id', auth, requireLibrarian, checkId, async (req, res) => {
+    try {
+        const book = await Book.findByIdAndUpdate(req.params.id, pick(req.body), {
+            new: true,
+            runValidators: true
+        })
+        if (!book) return res.status(404).json({ error: 'Book not found.' })
+        res.json(book)
+    } catch (err) {
+        if (err.name === 'ValidationError') return res.status(400).json({ error: err.message })
+        console.error(err)
+        res.status(500).json({ error: 'Server error.' })
+    }
+})
+
+router.delete('/:id', auth, requireLibrarian, checkId, async (req, res) => {
+    try {
+        const book = await Book.findByIdAndDelete(req.params.id)
+        if (!book) return res.status(404).json({ error: 'Book not found.' })
+        res.json({ message: 'Book deleted.' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Server error.' })
+    }
+})
+
+module.exports = router

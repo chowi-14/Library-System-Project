@@ -1,28 +1,45 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-// import crest from "../assets/crest.webp"
 import Navbar from "../components/Navbar";
+import Pagination from "../components/Pagination";
 
-// ---------- Data ----------
-// cover = [background, accent] colors used for the placeholder book cover
-const initialBooks = [];
+const API = "http://localhost:5000/api/books";
+const ROWS_PER_PAGE = 5;
+
+const api = async (path = "", options = {}) => {
+  const res = await fetch(`${API}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+    },
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch { /* not JSON */ }
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status}): ${text.slice(0, 120)}`);
+  return data;
+};
 
 const transactions = [];
 
-// ---------- Shared Tailwind class strings ----------
 const selectSm = "rounded-md border border-[#2b2b2b] bg-white px-2.5 py-[7px] text-[13px]";
 const inputBase =
   "block w-full rounded border bg-white px-2.5 py-2 text-[13px] font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0b4a8b]";
-const btnBase = "cursor-pointer rounded-sm px-3 py-[9px] text-[13px] font-bold";
+const btnBase = "cursor-pointer rounded-sm px-3 py-[9px] text-[13px] font-bold disabled:cursor-not-allowed disabled:opacity-60";
 const btnPrimary = `${btnBase} border border-[#eea51c] bg-[#eea51c] text-white hover:bg-[#d8940f]`;
 const btnSecondary = `${btnBase} border border-[#2b2b2b] bg-white text-[#1b1b1b] hover:bg-gray-100`;
 const btnDanger = `${btnBase} border border-[#c0121f] bg-[#c0121f] text-white hover:bg-[#9c0e19]`;
 const btnSmall = "cursor-pointer rounded-sm border border-[#2b2b2b] bg-white px-3.5 text-xs font-bold text-[#1b1b1b] hover:bg-gray-100";
 
-// ---------- Sortable table ----------
-
-// columns: [{ key, label, sortable?, render?(row) }]
-function SortableTable({ columns, rows, defaultSort, emptyText }) {
+function SortableTable({ columns, rows, defaultSort, emptyText, resetKey }) {
   const [sort, setSort] = useState(defaultSort);
+  const [page, setPage] = useState(1);
+  const [lastKey, setLastKey] = useState(resetKey);
+
+  if (resetKey !== lastKey) {
+    setLastKey(resetKey);
+    setPage(1);
+  }
 
   const sortable = columns.filter((c) => c.sortable);
 
@@ -37,15 +54,25 @@ function SortableTable({ columns, rows, defaultSort, emptyText }) {
     return list;
   }, [rows, sort]);
 
+  const totalPages = Math.max(1, Math.ceil(sorted.length / ROWS_PER_PAGE));
+  const current = Math.min(page, totalPages);
+  const start = (current - 1) * ROWS_PER_PAGE;
+  const pageRows = sorted.slice(start, start + ROWS_PER_PAGE);
+
+  const changeSort = (next) => {
+    setSort(next);
+    setPage(1);
+  };
+
   const toggle = (key) =>
-    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+    changeSort(sort.key === key ? { key, dir: sort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
 
   return (
     <>
       <div className="mb-2 flex items-center justify-end gap-2 text-[13px]">
         <label className="flex items-center gap-2">
           Sort by
-          <select className={selectSm} value={sort.key} onChange={(e) => setSort({ ...sort, key: e.target.value })}>
+          <select className={selectSm} value={sort.key} onChange={(e) => changeSort({ ...sort, key: e.target.value })}>
             {sortable.map((c) => (
               <option key={c.key} value={c.key}>{c.label}</option>
             ))}
@@ -55,7 +82,7 @@ function SortableTable({ columns, rows, defaultSort, emptyText }) {
           className={selectSm}
           aria-label="Sort order"
           value={sort.dir}
-          onChange={(e) => setSort({ ...sort, dir: e.target.value })}
+          onChange={(e) => changeSort({ ...sort, dir: e.target.value })}
         >
           <option value="asc">A to Z</option>
           <option value="desc">Z to A</option>
@@ -93,7 +120,7 @@ function SortableTable({ columns, rows, defaultSort, emptyText }) {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((row) => (
+            {pageRows.map((row) => (
               <tr key={row.id} className="border-b border-[#eee] last:border-b-0 hover:bg-[#faf6f0]">
                 {columns.map((c) => (
                   <td key={c.key} className="px-2.5 py-3 text-center">{c.render ? c.render(row) : row[c.key]}</td>
@@ -110,11 +137,16 @@ function SortableTable({ columns, rows, defaultSort, emptyText }) {
           </tbody>
         </table>
       </div>
+
+      {sorted.length > 0 && (
+        <p className="mt-2 text-center text-xs text-gray-500">
+          Showing {start + 1}–{start + pageRows.length} of {sorted.length}
+        </p>
+      )}
+      <Pagination page={current} totalPages={totalPages} onChange={setPage} />
     </>
   );
 }
-
-// ---------- Small pieces ----------
 
 const fmt = (iso) =>
   iso
@@ -137,7 +169,7 @@ const TrashIcon = () => (
   </svg>
 );
 
-const Cover = ({ colors, image }) => {
+const Cover = ({ colors = ["#4a1f1f", "#eea51c"], image }) => {
   const [failed, setFailed] = useState(false);
   if (image && !failed) {
     return (
@@ -162,6 +194,7 @@ const BADGE_COLORS = {
   available: "bg-[#0c7a43]",
   returned: "bg-[#0c7a43]",
   "not-returned": "bg-[#eea51c]",
+  borrowed: "bg-[#eea51c]",
 };
 
 const Badge = ({ status, overdue }) => {
@@ -173,13 +206,30 @@ const Badge = ({ status, overdue }) => {
   );
 };
 
-
-// ---------- Validation ----------
-
-const CATEGORIES = ["Fiction", "Non-Fiction", "Science Fiction", "Fantasy", "Mystery", "Biography", "History", "Science"];
+const CATEGORIES = ["Fiction", "Non-Fiction", "Academic", "Restricted"];
 const EMPTY_FORM = { title: "", author: "", publisher: "", category: "", published: "", description: "", image: "" };
 const DESC_MAX = 300;
 const todayISO = () => new Date().toISOString().slice(0, 10);
+
+const resizeImage = (file, maxWidth = 240, quality = 0.7) =>
+  new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read this image."));
+    };
+    img.src = url;
+  });
 
 const validate = (f) => {
   const e = {};
@@ -218,8 +268,6 @@ const validate = (f) => {
   }
   return e;
 };
-
-// ---------- Modals ----------
 
 function Modal({ title, titleId, onClose, small, role = "dialog", describedBy, children }) {
   return (
@@ -280,25 +328,29 @@ function BookFormModal({ book, onClose, onSave }) {
       : EMPTY_FORM
   );
   const [touched, setTouched] = useState({});
-  const [upload, setUpload] = useState(isData ? { name: "Uploaded image", data: book.image } : null); // { name, data } for a chosen file
+  const [upload, setUpload] = useState(isData ? { name: "Uploaded image", data: book.image } : null);
   const [fileError, setFileError] = useState("");
   const [imgOk, setImgOk] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const firstRef = useRef(null);
   const fileRef = useRef(null);
   const errors = validate(upload ? { ...form, image: "" } : form);
   const previewSrc = upload ? upload.data : form.image.trim() && !errors.image ? form.image.trim() : "";
 
-  // useEffect(() => { setImgOk(null); }, [previewSrc]);
-
-  const pickFile = (e) => {
+  const pickFile = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     if (!file.type.startsWith("image/")) return setFileError("Choose an image file (PNG, JPG or WEBP).");
-    if (file.size > 2 * 1024 * 1024) return setFileError("Image must be 2 MB or smaller.");
-    const reader = new FileReader();
-    reader.onload = () => { setUpload({ name: file.name, data: reader.result }); setFileError(""); };
-    reader.readAsDataURL(file);
+    if (file.size > 5 * 1024 * 1024) return setFileError("Image must be 5 MB or smaller.");
+    try {
+      const data = await resizeImage(file);
+      setUpload({ name: file.name, data });
+      setFileError("");
+    } catch (err) {
+      setFileError(err.message);
+    }
   };
   const clearUpload = () => { setUpload(null); setFileError(""); };
 
@@ -318,19 +370,27 @@ function BookFormModal({ book, onClose, onSave }) {
     "aria-invalid": !!err(k),
   });
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     setTouched(Object.fromEntries(Object.keys(EMPTY_FORM).map((k) => [k, true])));
     if (Object.keys(errors).length) return;
-    onSave({
-      title: form.title.trim(),
-      author: form.author.trim(),
-      publisher: form.publisher.trim(),
-      category: form.category,
-      published: form.published,
-      description: form.description.trim(),
-      image: upload ? upload.data : form.image.trim(),
-    });
+
+    setSaving(true);
+    setSubmitError("");
+    try {
+      await onSave({
+        title: form.title.trim(),
+        author: form.author.trim(),
+        publisher: form.publisher.trim(),
+        category: form.category,
+        published: form.published,
+        description: form.description.trim(),
+        image: upload ? upload.data : form.image.trim(),
+      });
+    } catch (err) {
+      setSubmitError(err.message);
+      setSaving(false);
+    }
   };
 
   const full = form.description.length >= DESC_MAX;
@@ -416,8 +476,14 @@ function BookFormModal({ book, onClose, onSave }) {
           </div>
         )}
 
+        {submitError && (
+          <p className="text-[12.5px] font-semibold text-[#c0121f]" role="alert">{submitError}</p>
+        )}
+
         <div className="mt-1.5 grid grid-cols-2 gap-6">
-          <button type="submit" className={btnPrimary}>{editing ? "Edit Book" : "Add Book"}</button>
+          <button type="submit" className={btnPrimary} disabled={saving}>
+            {saving ? "Saving..." : editing ? "Edit Book" : "Add Book"}
+          </button>
           <button type="button" className={btnSecondary} onClick={onClose}>Cancel</button>
         </div>
       </form>
@@ -450,15 +516,20 @@ function ConfirmDeleteModal({ book, onCancel, onConfirm }) {
   );
 }
 
-// ---------- Page ----------
-
 export default function HomeLibrarian() {
-  const [books, setBooks] = useState(initialBooks);
+  const [books, setBooks] = useState([]);
+  const [apiError, setApiError] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [toDelete, setToDelete] = useState(null);
   const [toEdit, setToEdit] = useState(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
+
+  useEffect(() => {
+    api()
+      .then((data) => setBooks(Array.isArray(data) ? data : []))
+      .catch((e) => setApiError(e.message));
+  }, []);
 
   const q = query.trim().toLowerCase();
   const filteredBooks = books.filter(
@@ -473,18 +544,36 @@ export default function HomeLibrarian() {
     { label: "Overdue", value: overdueCount, bg: "bg-[#ffadad]" },
     { label: "Available", value: availableCount, bg: "bg-[#ffd6a5]" },
   ];
-  const saveEdit = (f) => {
-    setBooks((prev) => prev.map((b) => (b.id === toEdit.id ? { ...b, ...f } : b)));
-    setToEdit(null);
-  };
-  const deleteBook = () => {
-    setBooks((prev) => prev.filter((b) => b.id !== toDelete.id));
-    setToDelete(null);
-  };
-  const addBook = (f) => {
-    setBooks((prev) => [...prev, { id: Date.now(), ...f, status: "Available", cover: ["#4a1f1f", "#eea51c"] }]);
+
+  const addBook = async (f) => {
+    const created = await api("", { method: "POST", body: JSON.stringify(f) });
+    setBooks((prev) => [...prev, created]);
+    setApiError("");
     setShowModal(false);
   };
+
+  const saveEdit = async (f) => {
+    const id = toEdit?.id;
+    if (!id) return;
+    const updated = await api(`/${id}`, { method: "PUT", body: JSON.stringify(f) });
+    setBooks((prev) => prev.map((b) => (b.id === id ? updated : b)));
+    setApiError("");
+    setToEdit(null);
+  };
+
+  const deleteBook = async () => {
+    const id = toDelete?.id;
+    if (!id) return;
+    try {
+      await api(`/${id}`, { method: "DELETE" });
+      setBooks((prev) => prev.filter((b) => b.id !== id));
+      setApiError("");
+    } catch (e) {
+      setApiError(e.message);
+    }
+    setToDelete(null);
+  };
+
   const filteredTx = transactions.filter((t) => statusFilter === "All Statuses" || t.status === statusFilter);
 
   const bookCols = [
@@ -544,6 +633,12 @@ export default function HomeLibrarian() {
           </button>
         </div>
 
+        {apiError && (
+          <p className="mb-4 rounded-md bg-[#ffe5e5] px-3 py-2 text-[13px] font-semibold text-[#c0121f]" role="alert">
+            {apiError}
+          </p>
+        )}
+
         <section className="mb-8 grid grid-cols-2 gap-5 md:grid-cols-4">
           {liveStats.map((s) => (
             <div key={s.label} className={`flex flex-col gap-1.5 rounded-xl px-[18px] py-3.5 ${s.bg}`}>
@@ -567,6 +662,7 @@ export default function HomeLibrarian() {
           <SortableTable
             columns={bookCols}
             rows={filteredBooks}
+            resetKey={query}
             defaultSort={{ key: "title", dir: "asc" }}
             emptyText={books.length === 0 ? "No books yet. Select + Add Book to add one." : undefined}
           />
@@ -584,6 +680,7 @@ export default function HomeLibrarian() {
           <SortableTable
             columns={txCols}
             rows={filteredTx}
+            resetKey={statusFilter}
             defaultSort={{ key: "borrowedOn", dir: "desc" }}
             emptyText={transactions.length === 0 ? "No transactions yet." : undefined}
           />
