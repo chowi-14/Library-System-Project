@@ -6,6 +6,7 @@ import Login from "./pages/Login";
 import SignUp from "./pages/SignUp";
 import HomeStudent from "./pages/HomeStudent";
 import HomeLibrarian from "./pages/HomeLibrarian";
+import Profile from "./pages/Profile";
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth();
@@ -22,6 +23,11 @@ function Home() {
   return user.role === "librarian" ? <HomeLibrarian /> : <HomeStudent />;
 }
 
+function ProfileRoute() {
+  const { user } = useAuth();
+  return <Profile role={user.role} />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -30,6 +36,8 @@ export default function App() {
         <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/signup" element={<PublicRoute><SignUp /></PublicRoute>} />
         <Route path="/home" element={<ProtectedRoute><Home /></ProtectedRoute>} />
+        <Route path="/student/profile" element={<ProtectedRoute><ProfileRoute /></ProtectedRoute>} />
+        <Route path="/librarian/profile" element={<ProtectedRoute><ProfileRoute /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>

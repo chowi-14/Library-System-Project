@@ -7,7 +7,7 @@ const librarianSchema = new mongoose.Schema({
     firstname:  {type: String, required: true},
     lastname:  {type: String, required: true},
     grade_level: String,
-    phone_numer: String,
+    phone_number: String,
     email: String
 })
 

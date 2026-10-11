@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, BookOpen, Scroll, GraduationCap, Skull, X } from
 import Navbar from "../components/Navbar";
 import crest from "../assets/crest.webp";
 import bg from "../assets/bg.webp";
+import { useLocation } from "react-router-dom";
 
 /* ---------------- Data ---------------- */
 
@@ -407,12 +408,17 @@ function TransactionsView({ borrowed, history, onReturn }) {
 
 /* ---------------- Page ---------------- */
 
-export default function HomeStudent() {
-  const [view, setView] = useState({ page: "home", slug: null }); // home | category | transactions
+export default function HomeStudent() { // home | category | transactions
   const [borrowed, setBorrowed] = useState(initialBorrowed);
   const [history, setHistory] = useState(initialHistory);
   const [modal, setModal] = useState(null); // { mode: "view" | "borrow", book }
   const [toast, setToast] = useState("");
+
+  const location = useLocation();
+  const [view, setView] = useState({
+    page: location.state?.page ?? "home",
+    slug: null,
+  });
 
   useEffect(() => {
     if (!toast) return;

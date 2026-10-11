@@ -61,7 +61,7 @@ const validate = (v) => {
   else if (!EMAIL_RE.test(v.email.trim()))
     e.email = "Enter a valid email address.";
 
-  const phone = v.phone.replace(/[\s-]/g, "");
+  const phone = v.phone_number.replace(/[\s-]/g, "");
   if (!phone) e.phone = "Phone number is required.";
   else if (!PHONE_RE.test(phone))
     e.phone = "Use 09XXXXXXXXX or +639XXXXXXXXX.";
@@ -83,7 +83,7 @@ const initialValues = {
   firstName: "",
   lastName: "",
   email: "",
-  phone: "",
+  phone_number: "",
   password: "",
   confirmPassword: "",
 };
@@ -180,11 +180,11 @@ export default function SignUp() {
     setTouched(Object.fromEntries(Object.keys(values).map((k) => [k, true])));
     if (Object.keys(found).length > 0) return
 
-    const { firstName, lastName, email, phone, password } = values;
+    const { firstName, lastName, email, phone_number, password } = values;
     const res = await register({
-      role, firstName, lastName,
-      email: email.trim().toLowerCase(),
-      phone, password,
+        role, firstName, lastName,
+        email: email.trim().toLowerCase(),
+        phone_number, password,
     });
     if (!res.ok) return setSubmitError(res.error);
     navigate("/login");
@@ -247,7 +247,7 @@ export default function SignUp() {
                   <Field name="lastName" placeholder="Last Name" {...fieldProps} />
                 </div>
                 <Field icon={Mail} name="email" type="email" placeholder="Enter your email" {...fieldProps} />
-                <Field icon={Phone} name="phone" type="tel" placeholder="Enter your Phone Number" {...fieldProps} />
+                <Field icon={Phone} name="phone_number" type="tel" placeholder="Enter your Phone Number" {...fieldProps} />
                 <Field icon={Lock} name="password" type="password" placeholder="Enter your password" {...fieldProps} />
                 <Field icon={Lock} name="confirmPassword" type="password" placeholder="Confirm your password" {...fieldProps} />
               </div>

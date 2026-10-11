@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import crest from "../assets/crest.webp"
+// import crest from "../assets/crest.webp"
+import Navbar from "../components/Navbar";
 
 // ---------- Data ----------
 // cover = [background, accent] colors used for the placeholder book cover
@@ -171,6 +172,7 @@ const Badge = ({ status, overdue }) => {
     </span>
   );
 };
+
 
 // ---------- Validation ----------
 
@@ -529,20 +531,7 @@ export default function HomeLibrarian() {
 
   return (
     <div className="min-h-screen bg-white font-sans text-[#1b1b1b]">
-      <header className="flex items-center justify-between bg-[#4a1f1f] px-6 py-2.5 text-white">
-        <div className="flex items-center gap-2.5">
-          <img
-              src={crest}
-              alt="Hogwarts Library crest"
-              className="h-9.5 w-auto object-contain"
-            />
-          <div>
-            <div className="font-serif text-lg">Hogwarts Library</div>
-            <div className="text-[11px] font-semibold opacity-90">Knowledge is the truest magic.</div>
-          </div>
-        </div>
-        <div className="grid h-8 w-8 place-items-center rounded-full bg-white text-base text-[#4a1f1f]" aria-label="Account">👤</div>
-      </header>
+      <Navbar role="librarian" />
 
       <main className="mx-auto max-w-[1100px] p-6">
         <div className="mb-5 flex items-center justify-between">

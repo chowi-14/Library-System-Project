@@ -17,14 +17,15 @@ const publicUser = (user, profile) => ({
     role: user.role,
     email: user.email,
     firstName: profile?.firstname,
-    lastName: profile?.lastname
+    lastName: profile?.lastname,
+    phone_number: profile?.phone_number
 })
 
 router.post('/register', async (req, res) => {
     try {
-        const { role, firstName, lastName, email, phone, password } = req.body
+        const { role, firstName, lastName, email, phone_number, password } = req.body
 
-        if (!role || !firstName || !lastName || !email || !phone || !password)
+        if (!role || !firstName || !lastName || !email || !phone_number || !password)
             return res.status(400).json({ error: 'All fields are required.' })
         if (!['student', 'librarian'].includes(role))
             return res.status(400).json({ error: 'Invalid role.' })
@@ -43,11 +44,11 @@ router.post('/register', async (req, res) => {
                 user_id: user._id,
                 firstname: firstName.trim(),
                 lastname: lastName.trim(),
-                phone_number: phone,
+                phone_number: phone_number,
                 email: normalized
             })
         } catch (err) {
-            await User.findByIdAndDelete(user._id) // don't leave a user without a profile
+            await User.findByIdAndDelete(user._id) 
             throw err
         }
 
