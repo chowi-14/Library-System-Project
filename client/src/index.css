@@ -1,1 +1,25 @@
-@import "tailwindcss"
+@import "tailwindcss";
+
+:root {
+  scrollbar-width: thin;
+  scrollbar-color: #4a1a1f #fbf6ee; /* thumb, track */
+}
+
+/* Fallback for older Chrome/Safari that don't support scrollbar-color */
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #fbf6ee;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #4a1a1f;
+    border-radius: 9999px;
+    border: 2px solid #fbf6ee;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #c97a2b;
+  }
+}

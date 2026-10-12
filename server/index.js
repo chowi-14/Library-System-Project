@@ -3,6 +3,7 @@ import mongoose from "mongoose"
 import cors from "cors"
 import "dotenv/config"
 import authRoutes from "./routes/auth.cjs"
+import bookRoutes from "./routes/bookRoutes.cjs"
 
 const app = express()
 app.use(cors({
@@ -12,6 +13,7 @@ app.use(cors({
 }))
 app.use(express.json())
 app.use("/api/auth", authRoutes)
+app.use("/api/books", bookRoutes)
 
 
 mongoose.connect(process.env.MONGODB_URI)
