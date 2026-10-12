@@ -5,7 +5,22 @@ import crest from "../assets/crest.webp";
 import bg from "../assets/bg.webp";
 import { useLocation } from "react-router-dom";
 
-/* ---------------- Data ---------------- */
+const API = "http://localhost:5000/api/books";
+
+const api = async (path = "", options = {}) => {
+  const res = await fetch(`${API}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${localStorage.getItem("token")}`,
+    },
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch { /* not JSON */ }
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status}): ${text.slice(0, 120)}`);
+  return data;
+};
 
 const categories = [
   { slug: "fiction", label: "Fiction", tagline: "Stories beyond the curriculum.", icon: BookOpen, color: "#e99b1c" },
@@ -14,25 +29,34 @@ const categories = [
   { slug: "restricted", label: "Restricted", tagline: "Forbidden knowledge. Read at your own risk.", icon: Skull, color: "#0a7a46" },
 ];
 
-// Add books here. `cover` and `released` (YYYY-MM-DD) are optional.
-// Example:
-// { id: 1, title: "Book Title", author: "Author Name", category: "fiction",
-//   released: "2019-02-26", cover: "/covers/book.webp", description: "is a ..." }
-const books = [];
-
-// Dates are YYYY-MM-DD
-const initialBorrowed = [];
-const initialHistory = [];
+const toStudentBook = (b) => ({
+  id: b.id,
+  title: b.title,
+  author: b.author,
+  category: (b.category || "").toLowerCase(),
+  released: b.published,
+  cover: b.image || undefined,
+  description: b.description,
+  status: b.status,
+});
 
 const parse = (d) => new Date(`${d}T00:00:00`);
 const fmt = (d, day = "numeric") =>
   parse(d).toLocaleDateString("en-US", { month: "long", day, year: "numeric" });
 
-/* ---------------- Small components ---------------- */
-
-// Real cover if `src` exists, otherwise a colored placeholder with the title.
 function Cover({ title, src, className = "" }) {
-  if (src) return <img src={src} alt={`${title} cover`} className={`object-cover ${className}`} />;
+  const [failed, setFailed] = useState(false);
+  if (src && !failed) {
+    return (
+      <img
+        src={src}
+        alt={`${title} cover`}
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+        className={`object-cover ${className}`}
+      />
+    );
+  }
   const hue = [...title].reduce((n, ch) => n + ch.charCodeAt(0), 0) % 360;
   return (
     <div
@@ -110,8 +134,6 @@ function Footer({ onOpenCategory }) {
   );
 }
 
-/* ---------------- Modal (view + borrow) ---------------- */
-
 function BookModal({ book, mode, alreadyBorrowed, onClose, onConfirm }) {
   const category = categories.find((c) => c.slug === book.category);
 
@@ -130,7 +152,6 @@ function BookModal({ book, mode, alreadyBorrowed, onClose, onConfirm }) {
         className="w-full max-w-2xl overflow-hidden rounded-sm bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex h-14 items-center justify-between bg-[#4a1a1f] px-6 text-white">
           {mode === "borrow" ? <h2 className="text-xl font-bold">Borrow Book</h2> : <span />}
           <button type="button" onClick={onClose} aria-label="Close" className="hover:opacity-80">
@@ -138,7 +159,6 @@ function BookModal({ book, mode, alreadyBorrowed, onClose, onConfirm }) {
           </button>
         </div>
 
-        {/* Body */}
         <div className="flex flex-col gap-6 p-6 sm:flex-row">
           <Cover
             title={book.title}
@@ -154,12 +174,14 @@ function BookModal({ book, mode, alreadyBorrowed, onClose, onConfirm }) {
               {book.released && <span>Released on: {fmt(book.released)}</span>}
             </p>
 
-            <span
-              className="mt-2 inline-block rounded px-2 py-0.5 text-xs font-bold text-white"
-              style={{ backgroundColor: category?.color }}
-            >
-              {category?.label}
-            </span>
+            {category && (
+              <span
+                className="mt-2 inline-block rounded px-2 py-0.5 text-xs font-bold text-white"
+                style={{ backgroundColor: category.color }}
+              >
+                {category.label}
+              </span>
+            )}
 
             <p className="mt-4 text-sm font-semibold leading-relaxed">
               {book.description || "No description available yet."}
@@ -199,15 +221,84 @@ function BookModal({ book, mode, alreadyBorrowed, onClose, onConfirm }) {
   );
 }
 
-/* ---------------- Views ---------------- */
+const PAGE_SIZE = 10;
+const HOME_PAGE_SIZE = 5;
 
-function HomeView({ onOpenCategory, onView, onBorrow }) {
+function usePagination(list, size = PAGE_SIZE) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(list.length / size));
+  const current = Math.min(page, totalPages);
+  const items = list.slice((current - 1) * size, current * size);
+  return { items, page: current, totalPages, setPage };
+}
+
+const pageNumbers = (page, total) => {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const shown = [...new Set([1, total, page - 1, page, page + 1])]
+    .filter((p) => p >= 1 && p <= total)
+    .sort((a, b) => a - b);
+  return shown.flatMap((p, i) => (i > 0 && p - shown[i - 1] > 1 ? ["…", p] : [p]));
+};
+
+function Pagination({ page, totalPages, onChange }) {
+  if (totalPages <= 1) return null;
+
+  const base = "min-w-9 rounded border px-3 py-1.5 text-sm";
+  const idle = "border-gray-400 bg-white hover:bg-gray-100";
+
+  return (
+    <nav aria-label="Pagination" className="mt-8 flex flex-wrap items-center justify-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => onChange(page - 1)}
+        disabled={page === 1}
+        className={`${base} ${idle} disabled:cursor-not-allowed disabled:opacity-40`}
+      >
+        Prev
+      </button>
+
+      {pageNumbers(page, totalPages).map((p, i) =>
+        p === "…" ? (
+          <span key={`gap-${i}`} className="px-1 text-gray-500">…</span>
+        ) : (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onChange(p)}
+            aria-current={p === page ? "page" : undefined}
+            className={`${base} ${p === page ? "border-[#4a1a1f] bg-[#4a1a1f] font-bold text-white" : idle}`}
+          >
+            {p}
+          </button>
+        )
+      )}
+
+      <button
+        type="button"
+        onClick={() => onChange(page + 1)}
+        disabled={page === totalPages}
+        className={`${base} ${idle} disabled:cursor-not-allowed disabled:opacity-40`}
+      >
+        Next
+      </button>
+    </nav>
+  );
+}
+
+function HomeView({ books, loading, onOpenCategory, onView, onBorrow }) {
+  const available = books.filter((b) => b.status === "Available");
+  const { items, page, totalPages, setPage } = usePagination(available, HOME_PAGE_SIZE);
+
+  const changePage = (p) => {
+    setPage(p);
+    document.getElementById("all-books")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const scrollToCategories = () =>
     document.getElementById("categories")?.scrollIntoView({ behavior: "smooth" });
 
   return (
     <>
-      {/* Hero */}
       <section
         className="relative flex h-[40vw] max-h-[620px] min-h-[340px] items-center bg-cover bg-center"
         style={{ backgroundImage: `url(${bg})` }}
@@ -228,7 +319,6 @@ function HomeView({ onOpenCategory, onView, onBorrow }) {
         </div>
       </section>
 
-      {/* Categories */}
       <section id="categories" className="w-full px-[7%] py-12">
         <p className="text-sm font-bold">Browse By Category</p>
         <h2 className="font-serif text-4xl">Find Your Next Read</h2>
@@ -252,29 +342,40 @@ function HomeView({ onOpenCategory, onView, onBorrow }) {
         </div>
       </section>
 
-      {/* All books */}
-      <section className="w-full px-[7%] pb-14">
+      <section id="all-books" className="w-full scroll-mt-4 px-[7%] pb-14">
         <h2 className="font-serif text-3xl">All Available Books</h2>
-        {books.length === 0 ? (
+        {loading ? (
+          <p className="mt-5 text-gray-500">Loading books...</p>
+        ) : available.length === 0 ? (
           <p className="mt-5 text-gray-500">No books available yet.</p>
         ) : (
-          <div className="mt-5 grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-5">
-            {books.slice(0, 5).map((b) => (
-              <BookCard key={b.id} book={b} onView={onView} onBorrow={onBorrow} />
-            ))}
-          </div>
+          <>
+            <div className="mt-5 grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-5">
+              {items.map((b) => (
+                <BookCard key={b.id} book={b} onView={onView} onBorrow={onBorrow} />
+              ))}
+            </div>
+            <Pagination page={page} totalPages={totalPages} onChange={changePage} />
+          </>
         )}
       </section>
     </>
   );
 }
 
-function CategoryView({ slug, onBack, onView, onBorrow }) {
+function CategoryView({ books, loading, slug, onBack, onView, onBorrow }) {
   const category = categories.find((c) => c.slug === slug);
+  const list = books.filter((b) => b.category === slug);
+  const { items, page, totalPages, setPage } = usePagination(list);
+
   if (!category) return null;
 
   const Icon = category.icon;
-  const list = books.filter((b) => b.category === slug);
+
+  const changePage = (p) => {
+    setPage(p);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   return (
     <>
@@ -296,14 +397,19 @@ function CategoryView({ slug, onBack, onView, onBorrow }) {
       </header>
 
       <main className="w-full flex-1 px-[7%] py-10">
-        {list.length === 0 ? (
+        {loading ? (
+          <p className="text-gray-500">Loading books...</p>
+        ) : list.length === 0 ? (
           <p className="text-gray-500">No books in this category yet.</p>
         ) : (
-          <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-5">
-            {list.map((b) => (
-              <BookCard key={b.id} book={b} onView={onView} onBorrow={onBorrow} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-5">
+              {items.map((b) => (
+                <BookCard key={b.id} book={b} onView={onView} onBorrow={onBorrow} />
+              ))}
+            </div>
+            <Pagination page={page} totalPages={totalPages} onChange={changePage} />
+          </>
         )}
       </main>
     </>
@@ -311,7 +417,7 @@ function CategoryView({ slug, onBack, onView, onBorrow }) {
 }
 
 function TransactionsView({ borrowed, history, onReturn }) {
-  const [tab, setTab] = useState("borrowed"); // "borrowed" | "history"
+  const [tab, setTab] = useState("borrowed");
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -406,12 +512,13 @@ function TransactionsView({ borrowed, history, onReturn }) {
   );
 }
 
-/* ---------------- Page ---------------- */
-
-export default function HomeStudent() { // home | category | transactions
-  const [borrowed, setBorrowed] = useState(initialBorrowed);
-  const [history, setHistory] = useState(initialHistory);
-  const [modal, setModal] = useState(null); // { mode: "view" | "borrow", book }
+export default function HomeStudent() {
+  const [books, setBooks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [borrowed, setBorrowed] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [modal, setModal] = useState(null);
   const [toast, setToast] = useState("");
 
   const location = useLocation();
@@ -419,6 +526,13 @@ export default function HomeStudent() { // home | category | transactions
     page: location.state?.page ?? "home",
     slug: null,
   });
+
+  useEffect(() => {
+    api()
+      .then((data) => setBooks(Array.isArray(data) ? data.map(toStudentBook) : []))
+      .catch((e) => setLoadError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -435,11 +549,11 @@ export default function HomeStudent() { // home | category | transactions
   const openBorrow = (book) => setModal({ mode: "borrow", book });
   const closeModal = () => setModal(null);
 
-  const iso = (d) => d.toLocaleDateString("en-CA"); // YYYY-MM-DD (local)
+  const iso = (d) => d.toLocaleDateString("en-CA");
 
   const confirmBorrow = (book) => {
     const due = new Date();
-    due.setDate(due.getDate() + 7); // 7-day loan
+    due.setDate(due.getDate() + 7);
     setBorrowed((list) => [
       {
         id: Date.now(),
@@ -469,8 +583,16 @@ export default function HomeStudent() { // home | category | transactions
         onNavigate={(page) => go(page)}
       />
 
+      {loadError && (
+        <p className="bg-[#ffe5e5] px-[7%] py-2 text-sm font-semibold text-[#c0121f]" role="alert">
+          {loadError}
+        </p>
+      )}
+
       {view.page === "home" && (
         <HomeView
+          books={books}
+          loading={loading}
           onOpenCategory={(slug) => go("category", slug)}
           onView={openView}
           onBorrow={openBorrow}
@@ -478,6 +600,9 @@ export default function HomeStudent() { // home | category | transactions
       )}
       {view.page === "category" && (
         <CategoryView
+          key={view.slug}
+          books={books}
+          loading={loading}
           slug={view.slug}
           onBack={() => go("home")}
           onView={openView}
