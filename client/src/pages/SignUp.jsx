@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Mail, Phone, Lock } from "lucide-react";
+import { Mail, Phone, Lock, Hash, BookOpen, Building2, GraduationCap } from "lucide-react";
 import girl from "../assets/signup.webp";
 import books from "../assets/books.webp";
 import crest from "../assets/crest.webp";
@@ -32,8 +32,10 @@ const HatIcon = ({ className }) => (
 
 const ROLES = [
   { id: "student", label: "Student", icon: ScarfIcon },
-  { id: "librarian", label: "Librarian", icon: HatIcon },
+  { id: "professor", label: "Professor", icon: HatIcon },
 ];
+
+const YEAR_LEVELS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE_RE = /^(09\d{9}|\+639\d{9})$/; 
@@ -47,8 +49,16 @@ const EyeIcon = ({ off }) => (
   </svg>
 );
 
-const validate = (v) => {
+const validate = (v, role) => {
   const e = {};
+  const idLabel = role === "student" ? "Student ID" : "Employee ID";
+  if (!v.idNumber.trim()) e.idNumber = `${idLabel} is required.`;
+  if (role === "student") {
+    if (!v.course.trim()) e.course = "Course is required.";
+    if (!v.yearLevel) e.yearLevel = "Choose your year level.";
+  }
+  if (role === "professor" && !v.department.trim())
+    e.department = "Department is required.";
 
   if (!v.firstName.trim()) e.firstName = "First name is required.";
   else if (!NAME_RE.test(v.firstName.trim()))
@@ -62,9 +72,9 @@ const validate = (v) => {
     e.email = "Enter a valid email address.";
 
   const phone = v.phone_number.replace(/[\s-]/g, "");
-  if (!phone) e.phone = "Phone number is required.";
+  if (!phone) e.phone_number = "Phone number is required.";
   else if (!PHONE_RE.test(phone))
-    e.phone = "Use 09XXXXXXXXX or +639XXXXXXXXX.";
+    e.phone_number = "Use 09XXXXXXXXX or +639XXXXXXXXX.";
 
   if (!v.password) e.password = "Password is required.";
   else if (v.password.length < 8)
@@ -84,6 +94,10 @@ const initialValues = {
   lastName: "",
   email: "",
   phone_number: "",
+  idNumber: "",
+  course: "",
+  yearLevel: "",
+  department: "",
   password: "",
   confirmPassword: "",
 };
@@ -158,13 +172,13 @@ export default function SignUp() {
   const handleChange = (e) => {
     const next = { ...values, [e.target.name]: e.target.value };
     setValues(next);
-    setErrors(validate(next));
+    setErrors(validate(next, role));
     setSubmitError("");
   };
 
   const handleBlur = (e) => {
     setTouched((t) => ({ ...t, [e.target.name]: true }));
-    setErrors(validate(values));
+    setErrors(validate(values, role));
   };
 
   
@@ -175,16 +189,21 @@ export default function SignUp() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const found = validate(values);
+    const found = validate(values, role);
     setErrors(found);
     setTouched(Object.fromEntries(Object.keys(values).map((k) => [k, true])));
     if (Object.keys(found).length > 0) return
 
-    const { firstName, lastName, email, phone_number, password } = values;
+    const { firstName, lastName, email, phone_number, password, idNumber, course, yearLevel, department } = values;
     const res = await register({
         role, firstName, lastName,
         email: email.trim().toLowerCase(),
-        phone_number, password,
+        phone_number: phone_number.replace(/[\s-]/g, ""),
+        password,
+        idNumber: idNumber.trim(),
+        course: role === "student" ? course.trim() : "",
+        yearLevel: role === "student" ? yearLevel : "",
+        department: role === "professor" ? department.trim() : "",
     });
     if (!res.ok) return setSubmitError(res.error);
     navigate("/login");
@@ -241,12 +260,59 @@ export default function SignUp() {
                 </Link>
               </p>
 
-              <div className="mt-6 space-y-5">
+                            <div className="mt-6 space-y-5">
                 <div className="grid grid-cols-2 gap-4">
                   <Field name="firstName" placeholder="First Name" {...fieldProps} />
                   <Field name="lastName" placeholder="Last Name" {...fieldProps} />
                 </div>
-                <Field icon={Mail} name="email" type="email" placeholder="Enter your email" {...fieldProps} />
+                <Field
+                  icon={Hash}
+                  name="idNumber"
+                  placeholder={`Enter your ${role === "student" ? "Student ID" : "Employee ID"}`}
+                  {...fieldProps}
+                />
+                <Field
+                  icon={Mail}
+                  name="email"
+                  type="email"
+                  placeholder={role === "student" ? "Enter your email" : "Enter your faculty email"}
+                  {...fieldProps}
+                />
+
+                {role === "student" && (
+                  <>
+                    <Field icon={BookOpen} name="course" placeholder="Enter your course" {...fieldProps} />
+                    <div>
+                      <div
+                        className={`flex items-center gap-3 border-b pb-2 ${
+                          touched.yearLevel && errors.yearLevel ? "border-red-300" : "border-[#f3d9c0]/70"
+                        } focus-within:border-[#f3d9c0]`}
+                      >
+                        <GraduationCap size={18} className="shrink-0 text-[#f3d9c0]" />
+                        <select
+                          name="yearLevel"
+                          value={values.yearLevel}
+                          onChange={handleChange}
+                          onBlur={handleBlur}
+                          className="w-full bg-transparent text-lg text-[#f3d9c0] outline-none"
+                        >
+                          <option value="" className="bg-[#4a1a1f]">Year level</option>
+                          {YEAR_LEVELS.map((y) => (
+                            <option key={y} value={y} className="bg-[#4a1a1f]">{y}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {touched.yearLevel && errors.yearLevel && (
+                        <p className="mt-1 text-sm text-red-300">{errors.yearLevel}</p>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {role === "professor" && (
+                  <Field icon={Building2} name="department" placeholder="Enter your department" {...fieldProps} />
+                )}
+
                 <Field icon={Phone} name="phone_number" type="tel" placeholder="Enter your Phone Number" {...fieldProps} />
                 <Field icon={Lock} name="password" type="password" placeholder="Enter your password" {...fieldProps} />
                 <Field icon={Lock} name="confirmPassword" type="password" placeholder="Confirm your password" {...fieldProps} />

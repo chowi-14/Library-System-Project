@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AuthContext } from "./authContext1";
 
-const API = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
+const API = import.meta.env.VITE_API_URL ?? "http://localhost:5001/api";
 
 const post = async (path, body) => {
     try {

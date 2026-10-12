@@ -6,6 +6,8 @@ const librarianSchema = new mongoose.Schema({
     },
     firstname:  {type: String, required: true},
     lastname:  {type: String, required: true},
+    id_number: { type: String, trim: true },
+    assigned_role: { type: String, trim: true },
     grade_level: String,
     phone_number: String,
     email: String

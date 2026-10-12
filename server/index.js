@@ -2,10 +2,17 @@ import express from "express"
 import mongoose from "mongoose"
 import cors from "cors"
 import "dotenv/config"
+import authRoutes from "./routes/auth.cjs"
 
 const app = express()
-app.use(cors())
+app.use(cors({
+    origin: /^http:\/\/localhost:\d+$/,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}))
 app.use(express.json())
+app.use("/api/auth", authRoutes)
+
 
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log("MongoDB connected"))
@@ -21,4 +28,4 @@ app.post("/api/items", async(req, res) => {
     res.status(201).json(await Item.create(req.body))
 })
 
-app.listen(process.env.PORT, () => console.log("Server Running"))
+app.listen(process.env.PORT, () => console.log(`Server Running on port ${process.env.PORT}`))
