@@ -201,8 +201,10 @@ export default function SignUp() {
         phone_number: phone_number.replace(/[\s-]/g, ""),
         password,
         idNumber: idNumber.trim(),
+        id_number: idNumber.trim(),
         course: role === "student" ? course.trim() : "",
         yearLevel: role === "student" ? yearLevel : "",
+        year_level: role === "student" ? yearLevel : "",
         department: role === "professor" ? department.trim() : "",
     });
     if (!res.ok) return setSubmitError(res.error);

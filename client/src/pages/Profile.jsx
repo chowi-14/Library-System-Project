@@ -95,7 +95,8 @@ function Field({ label, name, value, error, editing, onChange, type = "text", op
 export default function Profile() {
     const navigate = useNavigate()
     const { user, logout, updateProfile, updateAvatar } = useAuth()
-    const avatar = user.avatar
+    const [draftAvatar, setDraftAvatar] = useState(undefined) 
+    const avatar = draftAvatar !== undefined ? draftAvatar : user.avatar
     const fileRef = useRef(null)
     const [showLogout, setShowLogout] = useState(false)
     const isLibrarian = user.role === "librarian"
@@ -130,6 +131,7 @@ export default function Profile() {
     }
 
     const cancelEdit = () => {
+        setDraftAvatar(undefined)
         setDraft(profile)
         setErrors({})
         setEditing(false)
@@ -151,9 +153,11 @@ export default function Profile() {
             Object.entries(draft).map(([k, v]) => [k, String(v ?? "").trim()])
         )
 
-        const res = await updateProfile(clean)
+        const payload = draftAvatar !== undefined ? { ...clean, avatar: draftAvatar } : clean
+        const res = await updateProfile(payload)
         if (!res.ok) return setErrors({ email: res.error })
 
+        setDraftAvatar(undefined)
         setProfile(clean)
         setEditing(false)
     }
@@ -162,7 +166,7 @@ export default function Profile() {
         const file = e.target.files?.[0]
         if (!file) return
         const reader = new FileReader()
-        reader.onload = () => updateAvatar(reader.result)
+        reader.onload = () => setDraftAvatar(reader.result)
         reader.readAsDataURL(file)
         e.target.value = ""
     }
@@ -199,9 +203,10 @@ export default function Profile() {
                     <div className="relative shrink-0">
                         <button
                             type="button"
-                            onClick={() => fileRef.current?.click()}
+                            onClick={() => editing && fileRef.current?.click()}
+                            disabled={!editing}
                             aria-label="Change profile photo"
-                            className="rounded-full bg-[#4a1a1f] p-1.5"
+                            className={`rounded-full bg-[#4a1a1f] p-1.5 ${editing ? "cursor-pointer" : "cursor-default"}`}
                         >
                             <div className="rounded-full bg-[#F7DDB8] p-1">
                                 <div className="flex h-40 w-40 items-center justify-center overflow-hidden rounded-full bg-white">
@@ -213,14 +218,16 @@ export default function Profile() {
                                 </div>
                             </div>
                         </button>
-                        <span className="pointer-events-none absolute bottom-1 right-1 flex h-9 w-9 items-center justify-center rounded-full bg-amber-500 text-white">
-                            <Camera size={17} />
-                        </span>
+                        {editing && (
+                            <span className="pointer-events-none absolute bottom-1 right-1 flex h-9 w-9 items-center justify-center rounded-full bg-amber-500 text-white">
+                                <Camera size={17} />
+                            </span>
+                        )}
                         <input ref={fileRef} type="file" accept="image/*" onChange={handlePhoto} className="hidden" />
-                        {avatar && (
+                        {editing && avatar && (
                             <button
                                 type="button"
-                                onClick={() => updateAvatar(null)}
+                                onClick={() => setDraftAvatar(null)}
                                 className="mt-2 block w-full text-center text-xs font-bold text-red-700 hover:underline"
                             >
                                 Remove photo
@@ -288,7 +295,7 @@ export default function Profile() {
                         </div>
 
                         {editing ? (
-                            <div className="mt-6 grid grid-cols-2 gap-5">
+                            <div key="edit-actions" className="mt-6 grid grid-cols-2 gap-5">
                                 <button
                                     type="submit"
                                     className="rounded-sm bg-[#4a1a1f] py-2 text-sm font-bold text-white hover:bg-[#3a1717]"
@@ -304,7 +311,7 @@ export default function Profile() {
                                 </button>
                             </div>
                         ) : (
-                            <div className="mt-6 grid grid-cols-2 gap-5">
+                            <div key="view-actions" className="mt-6 grid grid-cols-2 gap-5">
                                 <button
                                     type="button"
                                     onClick={startEdit}

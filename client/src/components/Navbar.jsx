@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom"
 import crest from "../assets/crest.webp"
+import { useAuth } from "../context/useAuth"
 
 function ProfileIcon() {
     return (
@@ -16,6 +17,7 @@ function ProfileIcon() {
 
 export default function Navbar({ role = "student", active = "home", onNavigate, onProfile }) {
     const navigate = useNavigate()
+    const { user } = useAuth()
     const isLibrarian = role === "librarian"
 
     const linkClass = (name) =>
@@ -77,7 +79,15 @@ export default function Navbar({ role = "student", active = "home", onNavigate, 
                     aria-label="Profile"
                     className="justify-self-end rounded-full text-white/80 transition-colors hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
                 >
-                    <ProfileIcon />
+                    {user?.avatar ? (
+                        <img
+                            src={user.avatar}
+                            alt="Profile"
+                            className="h-[34px] w-[34px] rounded-full border border-white/70 object-cover"
+                        />
+                    ) : (
+                        <ProfileIcon />
+                    )}
                 </button>
             </nav>
         </header>
