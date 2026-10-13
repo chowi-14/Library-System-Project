@@ -1,3 +1,22 @@
+@import "tailwindcss";
+
+:root {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+:root.is-scrolling {
+  scrollbar-color: rgba(74, 26, 31, 0.35) transparent;
+}
+
+/* inner scrollbar (book shelves, modal) */
+*:not(html) {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:not(html):hover {
+  scrollbar-color: rgba(74, 26, 31, 0.35) transparent;
+}
+
 .counter {
   font-size: 16px;
   padding: 5px 10px;
