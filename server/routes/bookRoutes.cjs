@@ -3,6 +3,7 @@ const mongoose = require('mongoose')
 const router = express.Router()
 const Book = require('../models/Book.cjs')
 const Borrowing = require('../models/Borrowing.cjs')
+const User = require('../models/User.cjs')
 const auth = require('../middleware/auth.cjs')
 
 const requireLibrarian = (req, res, next) =>
@@ -22,6 +23,38 @@ const checkId = (req, res, next) =>
 router.get('/', auth, async (_req, res) => {
     try {
         res.json(await Book.find().sort({ title: 1 }))
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Server error.' })
+    }
+})
+
+router.get('/favorites', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id).populate('favorites')
+        res.json(user?.favorites ?? [])
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Server error.' })
+    }
+})
+
+router.put('/favorites/:id', auth, checkId, async (req, res) => {
+    try {
+        if (!(await Book.exists({ _id: req.params.id })))
+            return res.status(404).json({ error: 'Book not found.' })
+        await User.findByIdAndUpdate(req.user.id, { $addToSet: { favorites: req.params.id } })
+        res.json({ message: 'Added to favorites.' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Server error.' })
+    }
+})
+
+router.delete('/favorites/:id', auth, checkId, async (req, res) => {
+    try {
+        await User.findByIdAndUpdate(req.user.id, { $pull: { favorites: req.params.id } })
+        res.json({ message: 'Removed from favorites.' })
     } catch (err) {
         console.error(err)
         res.status(500).json({ error: 'Server error.' })
@@ -65,6 +98,7 @@ router.delete('/:id', auth, requireLibrarian, checkId, async (req, res) => {
         await Borrowing.deleteMany({ book_id: req.params.id, status: 'pending' })
         const book = await Book.findByIdAndDelete(req.params.id)
         if (!book) return res.status(404).json({ error: 'Book not found.' })
+        await User.updateMany({ favorites: req.params.id }, { $pull: { favorites: req.params.id } })
         res.json({ message: 'Book deleted.' })
     } catch (err) {
         console.error(err)

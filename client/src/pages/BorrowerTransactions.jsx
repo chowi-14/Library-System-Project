@@ -23,6 +23,61 @@ const daysLeftOf = (due) => {
 };
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+const PAGE_SIZE = 15;
+
+const pageNumbers = (page, total) => {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const shown = [...new Set([1, total, page - 1, page, page + 1])]
+    .filter((p) => p >= 1 && p <= total)
+    .sort((a, b) => a - b);
+  return shown.flatMap((p, i) => (i > 0 && p - shown[i - 1] > 1 ? ["…", p] : [p]));
+};
+
+function Pagination({ page, totalPages, onChange }) {
+  if (totalPages <= 1) return <div />;
+
+  const base = "min-w-9 rounded border px-3 py-1.5 text-sm";
+  const idle = "border-gray-400 bg-white hover:bg-gray-100";
+
+  return (
+    <nav aria-label="Pagination" className="flex flex-wrap items-center justify-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => onChange(page - 1)}
+        disabled={page === 1}
+        className={`${base} ${idle} disabled:cursor-not-allowed disabled:opacity-40`}
+      >
+        Prev
+      </button>
+
+      {pageNumbers(page, totalPages).map((p, i) =>
+        p === "…" ? (
+          <span key={`gap-${i}`} className="px-1 text-gray-500">…</span>
+        ) : (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onChange(p)}
+            aria-current={p === page ? "page" : undefined}
+            className={`${base} ${p === page ? "border-[#4a1a1f] bg-[#4a1a1f] font-bold text-white" : idle}`}
+          >
+            {p}
+          </button>
+        )
+      )}
+
+      <button
+        type="button"
+        onClick={() => onChange(page + 1)}
+        disabled={page === totalPages}
+        className={`${base} ${idle} disabled:cursor-not-allowed disabled:opacity-40`}
+      >
+        Next
+      </button>
+    </nav>
+  );
+}
+
 const FILTERS = [
   { key: "current", label: "Current", empty: "No current loans.", icon: BookOpen },
   { key: "pending", label: "Pending", empty: "No pending requests.", icon: Hourglass },
@@ -273,6 +328,7 @@ export default function BorrowerTransactions({
   onViewBook,
 }) {
   const [tab, setTab] = useState(FILTERS.some((f) => f.key === initialTab) ? initialTab : "current");
+  const [page, setPage] = useState(1);
 
   const current = borrowed.filter((b) => daysLeftOf(b.due) >= 0);
   const overdue = borrowed.filter((b) => daysLeftOf(b.due) < 0);
@@ -284,14 +340,13 @@ export default function BorrowerTransactions({
     history: history.length + declined.length,
   };
 
-  const summary =
-    [
-      borrowed.length > 0 && `${borrowed.length} borrowed`,
-      overdue.length > 0 && `${overdue.length} overdue`,
-      pending.length > 0 && `${pending.length} pending`,
-    ]
-      .filter(Boolean)
-      .join("  •  ") || "Nothing borrowed right now.";
+  const SUMMARY_LABELS = {
+    current: "borrowed",
+    pending: "pending",
+    overdue: "overdue",
+    history: "in history",
+  };
+  const summary = `${counts[tab]} ${SUMMARY_LABELS[tab]}`;
 
   const loanCard = (b) => <LoanCard key={b.id} item={b} onReturn={onReturn} onView={onViewBook} />;
 
@@ -315,11 +370,19 @@ export default function BorrowerTransactions({
 
   const activeFilter = FILTERS.find((f) => f.key === tab);
   const list = cards[tab];
+  const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const items = list.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const changePage = (p) => {
+    setPage(p);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
     return (
     <main className="w-full flex-1 px-[7%] py-8">
       <div className="flex flex-wrap items-end justify-between gap-2">
-        <h1 className="font-serif text-3xl font-bold text-[#2b0f12]">My Books</h1>
+        <h1 className="text-3xl font-bold text-[#2b0f12]">My Books</h1>
         <p className="text-sm text-gray-500">{summary}</p>
       </div>
 
@@ -331,7 +394,7 @@ export default function BorrowerTransactions({
             count={counts[f.key]}
             selected={tab === f.key}
             alert={f.key === "overdue" && counts.overdue > 0}
-            onClick={() => setTab(f.key)}
+            onClick={() => { setTab(f.key); setPage(1); }}
           />
         ))}
       </div>
@@ -340,7 +403,15 @@ export default function BorrowerTransactions({
         {list.length === 0 ? (
           <EmptyState filter={activeFilter} />
         ) : (
-          <ul className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">{list}</ul>
+          <>
+            <ul className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">{items}</ul>
+            <div className="mt-8 grid items-center gap-4 sm:grid-cols-3">
+              <p className="text-left text-sm text-gray-500">
+                Showing {items.length} of {list.length}
+              </p>
+              <Pagination page={currentPage} totalPages={totalPages} onChange={changePage} />
+            </div>
+          </>
         )}
       </section>
     </main>

@@ -30,7 +30,11 @@ const userSchema = new mongoose.Schema({
     is_head: {
         type: Boolean,
         default: false
-    }
+    },
+    favorites: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Book'
+    }]
 })
 
 module.exports = mongoose.model('User', userSchema)

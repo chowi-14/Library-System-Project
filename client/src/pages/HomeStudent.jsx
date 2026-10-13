@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
-import { ArrowLeft, ArrowRight, BookOpen, BookMarked, ChevronRight, Scroll, GraduationCap, Skull, X, Search, CheckCircle2, Clock, ArrowUpDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, BookOpen, BookMarked, ChevronRight, Scroll, GraduationCap, Skull, X, Search, CheckCircle2, Clock, ArrowUpDown, Heart } from "lucide-react";
 import Navbar from "../components/Navbar";
 import Cover from "../components/Cover";
 import BorrowerTransactions from "./BorrowerTransactions";
 import { fmt } from "../utils/dates";
 import crest from "../assets/crest.webp";
 import bg from "../assets/bg.webp";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const API = "http://localhost:5001/api/books";
 
@@ -39,6 +39,7 @@ const toStudentBook = (b) => ({
   title: b.title,
   author: b.author,
   category: (b.category || "").toLowerCase(),
+  subcategory: b.subcategory || "",
   released: b.published,
   cover: b.image || undefined,
   description: b.description,
@@ -126,11 +127,29 @@ function Footer({ onOpenCategory }) {
   );
 }
 
-function BookModal({ book, mode, alreadyBorrowed, alreadyRequested, onClose, onConfirm }) {
+function BookModal({ book, mode, alreadyBorrowed, alreadyRequested, isFavorite, onToggleFavorite, onClose, onConfirm }) {
   const category = categories.find((c) => c.slug === book.category);
   const available = book.status === "Available";
   const accent = category?.color ?? "#4a1a1f";
   const canBorrow = available && !alreadyBorrowed && !alreadyRequested;
+
+  const [scrolling, setScrolling] = useState(false);
+  const [thumb, setThumb] = useState({ top: 0, height: 0 });
+  const scrollRef = useRef(null);
+  const scrollTimer = useRef(null);
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (el && el.scrollHeight > el.clientHeight) {
+      const height = Math.max(32, (el.clientHeight / el.scrollHeight) * el.clientHeight);
+      const maxScroll = el.scrollHeight - el.clientHeight;
+      const top = (el.scrollTop / maxScroll) * (el.clientHeight - height);
+      setThumb({ top, height });
+    }
+    setScrolling(true);
+    clearTimeout(scrollTimer.current);
+    scrollTimer.current = setTimeout(() => setScrolling(false), 700);
+  };
+  useEffect(() => () => clearTimeout(scrollTimer.current), []);
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -147,7 +166,11 @@ function BookModal({ book, mode, alreadyBorrowed, alreadyRequested, onClose, onC
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
-      <style>{`@keyframes modal-pop{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}`}</style>
+      <style>{`
+        @keyframes modal-pop{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}
+        .modal-scroll{scrollbar-width:none}
+        .modal-scroll::-webkit-scrollbar{display:none}
+      `}</style>
       <div
         role="dialog"
         aria-modal="true"
@@ -165,11 +188,25 @@ function BookModal({ book, mode, alreadyBorrowed, alreadyRequested, onClose, onC
           <X size={18} />
         </button>
 
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="modal-scroll max-h-[90vh] overflow-y-auto"
+        >
         <div className="grid md:grid-cols-[280px_1fr]">
           <div
-            className="flex items-center justify-center p-8"
+            className="relative flex items-center justify-center p-8"
             style={{ background: `linear-gradient(160deg, ${accent}22, ${accent}66)` }}
           >
+            <button
+              type="button"
+              onClick={() => onToggleFavorite(book)}
+              aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+              aria-pressed={isFavorite}
+              className="absolute left-4 top-4 z-10 rounded-full bg-black/20 p-2 text-white transition hover:bg-black/30"
+            >
+              <Heart size={18} className={isFavorite ? "fill-red-400 text-red-400" : ""} />
+            </button>
             <Cover
               title={book.title}
               src={book.cover}
@@ -177,7 +214,7 @@ function BookModal({ book, mode, alreadyBorrowed, alreadyRequested, onClose, onC
             />
           </div>
 
-          <div className="flex max-h-[80vh] flex-col overflow-y-auto p-8">
+          <div className="flex flex-col p-8">
             <div className="flex flex-wrap items-center gap-2">
               {category && (
                 <span
@@ -244,17 +281,27 @@ function BookModal({ book, mode, alreadyBorrowed, alreadyRequested, onClose, onC
                     {mode === "borrow" ? "Confirm borrow" : "Borrow this book"} <ArrowRight size={14} />
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="rounded-full border border-gray-300 bg-white px-6 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-100"
-                >
-                  {mode === "borrow" ? "Cancel" : "Close"}
-                </button>
+                {mode === "borrow" && (
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="rounded-full border border-gray-300 bg-white px-6 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
+        </div>
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none absolute right-1 w-1.5 rounded-full bg-[#4a1a1f]/50 transition-opacity duration-300 ${
+            scrolling && thumb.height > 0 ? "opacity-100" : "opacity-0"
+          }`}
+          style={{ top: thumb.top, height: thumb.height }}
+        />
       </div>
     </div>
   );
@@ -492,16 +539,25 @@ function HomeView({ books, loading, borrowedCount, onOpenCategory, onOpenBorrowe
   const [category, setCategory] = useState("all");
   const [availableOnly, setAvailableOnly] = useState(false);
   const [sort, setSort] = useState("title");
+  const [sub, setSub] = useState("all");
 
   const hasFilters = query.trim() !== "" || category !== "all" || availableOnly;
 
   const countOf = (slug) =>
     slug === "all" ? books.length : books.filter((b) => b.category === slug).length;
 
+  const subOptions =
+    category === "all"
+      ? []
+      : [...new Set(books.filter((b) => b.category === category).map((b) => b.subcategory).filter(Boolean))].sort(
+          (a, b) => a.localeCompare(b)
+        );
+
   const results = sortBooks(
     books.filter((b) => {
       if (category !== "all" && b.category !== category) return false;
       if (availableOnly && b.status !== "Available") return false;
+      if (sub !== "all" && b.subcategory !== sub) return false;
       const q = query.trim().toLowerCase();
       if (!q) return true;
       return [b.title, b.author, b.category, b.description]
@@ -523,16 +579,29 @@ function HomeView({ books, loading, borrowedCount, onOpenCategory, onOpenBorrowe
     ? categories.find((c) => c.slug === category)?.label
     : "All books";
 
-  const { items, page, totalPages, setPage } = usePagination(results);
+  const { items, page, totalPages, setPage } = usePagination(results, 20);
 
   useEffect(() => {
     setPage(1);
-  }, [query, category, availableOnly, sort, setPage]);
+  }, [query, category, sub, availableOnly, sort, setPage]);
 
   const changePage = (p) => {
     setPage(p);
     document.getElementById("all-books")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+
+  const searchRef = useRef(null);
+  const [stuck, setStuck] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const el = searchRef.current;
+      if (el) setStuck(el.getBoundingClientRect().top <= 73);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const clearFilters = () => {
     setQuery("");
@@ -550,7 +619,7 @@ function HomeView({ books, loading, borrowedCount, onOpenCategory, onOpenBorrowe
   return (
     <>
       <section
-        className="relative flex min-h-[420px] items-center bg-cover bg-center"
+        className="relative flex min-h-[420px] items-end bg-cover bg-center"
         style={{ backgroundImage: `url(${bg})` }}
       >
         <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/45 to-black/20" />
@@ -563,22 +632,30 @@ function HomeView({ books, loading, borrowedCount, onOpenCategory, onOpenBorrowe
             Where every book holds a lesson, and every lesson holds power.
           </p>
 
-          <div className="mt-8 flex max-w-2xl items-center gap-3 rounded-full bg-white/95 px-5 py-3 text-gray-800 shadow-xl backdrop-blur focus-within:ring-4 focus-within:ring-[#e9c27a]/60">
-            <Search size={20} className="shrink-0 text-[#4a1a1f]" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search titles, authors, or topics"
-              className="w-full bg-transparent text-base outline-none placeholder:text-gray-500"
-            />
-            {query && (
-              <button type="button" onClick={() => setQuery("")} aria-label="Clear search">
-                <X size={18} className="text-[#4a1a1f]" />
-              </button>
-            )}
-          </div>
+          <div className="mt-8 h-12" />
         </div>
       </section>
+
+      <div ref={searchRef} className="pointer-events-none sticky top-[72px] z-40 -mt-28 mb-16 px-[7%]">
+        <div
+          className={`pointer-events-auto flex h-12 max-w-2xl items-center gap-3 rounded-full border border-black/5 px-5 text-gray-800 shadow-xl backdrop-blur-md transition-colors duration-200 focus-within:ring-4 focus-within:ring-[#e9c27a]/60 ${stuck ? "mx-auto" : ""} ${
+            query ? "bg-white" : "bg-white/70 focus-within:bg-white"
+          }`}
+        >
+          <Search size={20} className="shrink-0 text-[#4a1a1f]" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search titles, authors, or topics"
+            className="w-full bg-transparent text-base outline-none placeholder:text-gray-500"
+          />
+          {query && (
+            <button type="button" onClick={() => setQuery("")} aria-label="Clear search">
+              <X size={18} className="text-[#4a1a1f]" />
+            </button>
+          )}
+        </div>
+      </div>
 
             <section className="sticky top-0 z-30 flex items-stretch border-b border-[#e8dcc8] bg-[#fbf6ee]/95 backdrop-blur">
         <div className="flex min-w-0 flex-1 items-center overflow-x-auto pl-[7%] pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -588,7 +665,10 @@ function HomeView({ books, loading, borrowedCount, onOpenCategory, onOpenBorrowe
               <button
                 key={slug}
                 type="button"
-                onClick={() => setCategory(slug)}
+                onClick={() => {
+                  setCategory(slug);
+                  setSub("all");
+                }}
                 aria-pressed={active}
                 className={`relative shrink-0 px-4 py-4 text-sm font-semibold transition ${
                   active ? "text-[#4a1a1f]" : "text-gray-600 hover:text-[#4a1a1f]"
@@ -676,6 +756,26 @@ function HomeView({ books, loading, borrowedCount, onOpenCategory, onOpenBorrowe
           </div>
         </div>
 
+        {subOptions.length > 0 && (
+          <div className="mt-5 flex flex-wrap gap-2" role="group" aria-label="Filter by subcategory">
+            {["all", ...subOptions].map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSub(s)}
+                aria-pressed={sub === s}
+                className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition ${
+                  sub === s
+                    ? "border-[#4a1a1f] bg-[#4a1a1f] text-white shadow"
+                    : "border-[#4a1a1f] bg-white text-[#4a1a1f] hover:bg-gray-50"
+                }`}
+              >
+                {s === "all" ? "All" : s}
+              </button>
+            ))}
+          </div>
+        )}
+
         {loading ? (
           <p className="mt-6 text-gray-500">Loading books...</p>
         ) : results.length === 0 ? (
@@ -696,6 +796,9 @@ function HomeView({ books, loading, borrowedCount, onOpenCategory, onOpenBorrowe
               ))}
             </div>
             <Pagination page={page} totalPages={totalPages} onChange={changePage} />
+            <p className="mt-4 text-left text-sm text-gray-500">
+              Showing {items.length} of {results.length}
+            </p>
           </>
         )}
       </section>
@@ -704,11 +807,24 @@ function HomeView({ books, loading, borrowedCount, onOpenCategory, onOpenBorrowe
 }
 
 function CategoryView({ books, loading, slug, onBack, onView, onBorrow }) {
+  const [sub, setSub] = useState("all");
   const category = categories.find((c) => c.slug === slug);
-  const list = books.filter((b) => b.category === slug);
+  const inCategory = books.filter((b) => b.category === slug);
+  const subcategories = [...new Set(inCategory.map((b) => b.subcategory).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b)
+  );
+  const list = sub === "all" ? inCategory : inCategory.filter((b) => b.subcategory === sub);
   const { items, page, totalPages, setPage } = usePagination(list);
 
   if (!category) return null;
+
+  const countOfSub = (s) =>
+    s === "all" ? inCategory.length : inCategory.filter((b) => b.subcategory === s).length;
+
+  const pickSub = (s) => {
+    setSub(s);
+    setPage(1);
+  };
 
   const Icon = category.icon;
 
@@ -737,6 +853,33 @@ function CategoryView({ books, loading, slug, onBack, onView, onBorrow }) {
       </header>
 
       <main className="w-full flex-1 px-[7%] py-10">
+        {subcategories.length > 0 && (
+          <div className="mb-8 flex flex-wrap gap-2" role="group" aria-label="Filter by subcategory">
+            {["all", ...subcategories].map((s) => {
+              const active = sub === s;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => pickSub(s)}
+                  aria-pressed={active}
+                  className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition ${
+                    active ? "text-white shadow" : "bg-white hover:bg-gray-50"
+                  }`}
+                  style={{
+                    borderColor: category.color,
+                    color: active ? "#fff" : category.color,
+                    backgroundColor: active ? category.color : undefined,
+                  }}
+                >
+                  {s === "all" ? "All" : s}
+                  <span className="ml-1.5 text-xs font-normal opacity-70">{countOfSub(s)}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {loading ? (
           <p className="text-gray-500">Loading books...</p>
         ) : list.length === 0 ? (
@@ -756,13 +899,13 @@ function CategoryView({ books, loading, slug, onBack, onView, onBorrow }) {
   );
 }
 
-
 export default function HomeStudent() {
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [rows, setRows] = useState([]);
   const [returningId, setReturningId] = useState(null);
+  const [favorites, setFavorites] = useState([]);
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState("");
 
@@ -825,6 +968,18 @@ export default function HomeStudent() {
     slug: null,
   });
 
+  const navigate = useNavigate();
+  const pendingBookId = location.state?.bookId;
+  useEffect(() => {
+    if (pendingBookId == null || books.length === 0) return;
+    const target = books.find((x) => String(x.id) === String(pendingBookId));
+    if (target) setModal({ mode: "view", book: target });
+    navigate(location.pathname, {
+      replace: true,
+      state: { ...location.state, bookId: undefined },
+    });
+  }, [pendingBookId, books]);
+
   useEffect(() => {
     api()
       .then((data) => setBooks(Array.isArray(data) ? data.map(toStudentBook) : []))
@@ -838,6 +993,12 @@ export default function HomeStudent() {
     return () => window.removeEventListener("focus", loadLoans);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+    useEffect(() => {
+      api("/favorites")
+        .then((list) => setFavorites(Array.isArray(list) ? list.map((b) => String(b.id)) : []))
+        .catch((e) => setLoadError(e.message));
+    }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -854,6 +1015,19 @@ export default function HomeStudent() {
   const openView = (book) => setModal({ mode: "view", book });
   const openBorrow = (book) => setModal({ mode: "borrow", book });
   const closeModal = () => setModal(null);
+
+  const toggleFavorite = async (book) => {
+    const id = String(book.id);
+    const wasFav = favorites.includes(id);
+    setFavorites((prev) => (wasFav ? prev.filter((x) => x !== id) : [...prev, id]));
+    try {
+      await api(`/favorites/${id}`, { method: wasFav ? "DELETE" : "PUT" });
+      setToast(wasFav ? "Removed from favorites" : "Added to favorites");
+    } catch (e) {
+      setFavorites((prev) => (wasFav ? [...prev, id] : prev.filter((x) => x !== id)));
+      setToast(e.message);
+    }
+  };
 
   const confirmBorrow = async (book) => {
     try {
@@ -952,6 +1126,8 @@ export default function HomeStudent() {
           mode={modal.mode}
           alreadyBorrowed={borrowed.some((b) => String(b.bookId) === String(modal.book.id))}
           alreadyRequested={pending.some((b) => String(b.bookId) === String(modal.book.id))}
+          isFavorite={favorites.includes(String(modal.book.id))}
+          onToggleFavorite={toggleFavorite}
           onClose={closeModal}
           onConfirm={confirmBorrow}
         />
