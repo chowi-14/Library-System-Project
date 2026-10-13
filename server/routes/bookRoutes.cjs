@@ -56,8 +56,13 @@ router.put('/:id', auth, requireLibrarian, checkId, async (req, res) => {
 
 router.delete('/:id', auth, requireLibrarian, checkId, async (req, res) => {
     try {
-        if (await Borrowing.exists({ book_id: req.params.id, return_date: null }))
+        if (await Borrowing.exists({
+            book_id: req.params.id,
+            return_date: null,
+            status: { $nin: ['pending', 'declined', 'cancelled'] }
+        }))
             return res.status(409).json({ error: "This book is currently borrowed and can't be deleted." })
+        await Borrowing.deleteMany({ book_id: req.params.id, status: 'pending' })
         const book = await Book.findByIdAndDelete(req.params.id)
         if (!book) return res.status(404).json({ error: 'Book not found.' })
         res.json({ message: 'Book deleted.' })
