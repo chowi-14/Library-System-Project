@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, BookOpen, BookMarked, ChevronRight, Scroll, GraduationCap, Skull, X, Search, CheckCircle2, Clock, ArrowUpDown } from "lucide-react";
 import Navbar from "../components/Navbar";
+import Cover from "../components/Cover";
+import BorrowerTransactions from "./BorrowerTransactions";
+import { fmt } from "../utils/dates";
 import crest from "../assets/crest.webp";
 import bg from "../assets/bg.webp";
 import { useLocation } from "react-router-dom";
@@ -36,40 +39,12 @@ const toStudentBook = (b) => ({
   title: b.title,
   author: b.author,
   category: (b.category || "").toLowerCase(),
-  subcategory: b.subcategory || "",
   released: b.published,
   cover: b.image || undefined,
   description: b.description,
   status: b.status,
 });
 
-const parse = (d) => new Date(`${d}T00:00:00`);
-const fmt = (d, day = "numeric") =>
-  parse(d).toLocaleDateString("en-US", { month: "long", day, year: "numeric" });
-
-function Cover({ title, src, className = "" }) {
-  const [failed, setFailed] = useState(false);
-  if (src && !failed) {
-    return (
-      <img
-        src={src}
-        alt={`${title} cover`}
-        referrerPolicy="no-referrer"
-        onError={() => setFailed(true)}
-        className={`object-cover ${className}`}
-      />
-    );
-  }
-  const hue = [...title].reduce((n, ch) => n + ch.charCodeAt(0), 0) % 360;
-  return (
-    <div
-      className={`flex items-center justify-center p-1 text-center font-serif text-[10px] leading-tight text-white ${className}`}
-      style={{ background: `linear-gradient(160deg, hsl(${hue} 45% 32%), hsl(${(hue + 40) % 360} 50% 14%))` }}
-    >
-      {title}
-    </div>
-  );
-}
 
 function BookCard({ book, onBorrow, onView }) {
   const available = book.status === "Available";
@@ -236,12 +211,6 @@ function BookModal({ book, mode, alreadyBorrowed, alreadyRequested, onClose, onC
                 <dt className="text-xs font-semibold uppercase tracking-wide text-gray-400">Category</dt>
                 <dd className="mt-0.5 font-semibold">{category?.label ?? "Uncategorized"}</dd>
               </div>
-              {book.subcategory && (
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-wide text-gray-400">Subcategory</dt>
-                  <dd className="mt-0.5 font-semibold">{book.subcategory}</dd>
-                </div>
-              )}
             </dl>
 
             <div className="mt-6">
@@ -272,7 +241,7 @@ function BookModal({ book, mode, alreadyBorrowed, alreadyRequested, onClose, onC
                     onClick={() => onConfirm(book)}
                     className="inline-flex items-center gap-2 rounded-full bg-[#4a1a1f] px-6 py-2.5 text-sm font-semibold text-white shadow-md transition hover:brightness-125"
                   >
-                    {mode === "borrow" ? "Send request" : "Request to borrow"} <ArrowRight size={14} />
+                    {mode === "borrow" ? "Confirm borrow" : "Borrow this book"} <ArrowRight size={14} />
                   </button>
                 )}
                 <button
@@ -501,7 +470,7 @@ function PromoBanner({ onAction }) {
         <div className="relative flex flex-wrap items-center justify-between gap-6">
           <div>
             <h2 className="font-serif text-3xl sm:text-4xl">
-              Borrow any available book for <span className="text-[#e9c27a]">14 days</span>.
+              Borrow any available book for <span className="text-[#e9c27a]">7 days</span>.
             </h2>
             <p className="mt-2 text-sm opacity-80">Return on time and keep your record clean. Mischief managed.</p>
           </div>
@@ -787,145 +756,6 @@ function CategoryView({ books, loading, slug, onBack, onView, onBorrow }) {
   );
 }
 
-function TransactionsView({ borrowed, pending, history, declined, onReturn, onCancel, returningId }) {
-  const [tab, setTab] = useState("borrowed");
-
-  // returned loans + declined requests, newest first
-  const entries = [
-    ...history.map((h) => ({ ...h, declined: false })),
-    ...declined.map((d) => ({ ...d, declined: true })),
-  ].sort((a, b) =>
-    String(b.declined ? b.decidedOn : b.returned).localeCompare(String(a.declined ? a.decidedOn : a.returned))
-  );
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const isOverdue = (due) => parse(due) < today;
-
-  const tabClass = (name) =>
-    `border-b-2 px-2 pb-2 text-lg font-bold ${
-      tab === name ? "border-[#4a1a1f]" : "border-transparent hover:border-gray-400"
-    }`;
-
-  return (
-    <main className="w-full flex-1 px-[7%] py-8">
-      <div className="flex gap-12 border-b border-gray-400">
-        <button type="button" onClick={() => setTab("borrowed")} className={tabClass("borrowed")}>
-          Borrowed Books
-        </button>
-        <button type="button" onClick={() => setTab("pending")} className={tabClass("pending")}>
-          Pending{pending.length > 0 ? ` (${pending.length})` : ""}
-        </button>
-        <button type="button" onClick={() => setTab("history")} className={tabClass("history")}>
-          History
-        </button>
-      </div>
-
-      {tab === "pending" ? (
-        <ul className="mt-6 space-y-4">
-          {pending.length === 0 && <li className="text-sm text-gray-500">No pending requests.</li>}
-          {pending.map((item) => (
-            <li key={item.id} className="flex items-center gap-4 rounded-md border border-transparent bg-gray-100 p-3">
-              <Cover title={item.title} src={item.cover} className="h-14 w-10 shrink-0 rounded-sm" />
-              <div className="flex-1">
-                <h3 className="font-bold leading-tight">
-                  {item.title} <span className="ml-1 text-[10px] font-normal">{item.author}</span>
-                </h3>
-                <p className="mt-1 text-[11px] font-semibold text-gray-700">Requested: {fmt(item.requestedOn)}</p>
-                <p className="text-[11px] font-semibold text-amber-700">Waiting for librarian approval</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onCancel(item)}
-                className="rounded bg-red-700 px-6 py-1 text-xs font-semibold text-white hover:bg-red-800"
-              >
-                Cancel request
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : tab === "borrowed" ? (
-        <ul className="mt-6 space-y-4">
-          {borrowed.length === 0 && <li className="text-sm text-gray-500">No borrowed books.</li>}
-          {borrowed.map((item) => {
-            const overdue = isOverdue(item.due);
-            return (
-              <li
-                key={item.id}
-                className={`flex items-center gap-4 rounded-md bg-gray-100 p-3 ${
-                  overdue ? "border border-red-600" : "border border-transparent"
-                }`}
-              >
-                <Cover title={item.title} src={item.cover} className="h-14 w-10 shrink-0 rounded-sm" />
-                <div className="flex-1">
-                  <h3 className="font-bold leading-tight">
-                    {item.title} <span className="ml-1 text-[10px] font-normal">{item.author}</span>
-                  </h3>
-                  <p className="mt-1 text-[11px] font-semibold text-gray-700">Borrowed: {fmt(item.borrowed)}</p>
-                  <p className="text-[11px] font-semibold text-gray-700">Due: {fmt(item.due)}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onReturn(item)}
-                  disabled={returningId === item.id}
-                  className={`rounded px-6 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
-                    overdue
-                      ? "bg-red-700 text-white hover:bg-red-800"
-                      : "border border-gray-500 bg-white hover:bg-gray-100"
-                  }`}
-                >
-                  {returningId === item.id ? "Returning..." : "Return"}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <div className="mt-6 min-h-[420px] overflow-x-auto rounded-md border border-gray-400">
-          <table className="w-full min-w-[640px] text-center text-xs">
-            <thead>
-              <tr className="border-b border-gray-400">
-                <th className="w-16 p-3" />
-                {["Title", "Author", "Category", "Borrowed Date", "Returned Date", "Status"].map((h) => (
-                  <th key={h} className="p-3 font-bold">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {entries.length === 0 && (
-                <tr><td colSpan={7} className="p-6 text-gray-500">No history yet.</td></tr>
-              )}
-              {entries.map((item) => (
-                <tr key={item.id} className="border-b border-gray-300 font-semibold">
-                  <td className="p-3">
-                    <Cover title={item.title} src={item.cover} className="mx-auto h-14 w-10 rounded-sm" />
-                  </td>
-                  <td className="p-3">{item.title}</td>
-                  <td className="p-3">{item.author}</td>
-                  <td className="p-3">{item.category}</td>
-                  <td className="p-3">{item.declined ? "-" : fmt(item.borrowed, "2-digit")}</td>
-                  <td className="p-3">{item.declined ? "-" : fmt(item.returned, "2-digit")}</td>
-                  <td className="p-3">
-                    {item.declined ? (
-                      <>
-                        <span className="rounded-full bg-red-700 px-3 py-0.5 text-[10px] text-white">Declined</span>
-                        {item.decidedOn && (
-                          <p className="mt-1 text-[10px] text-gray-500">{fmt(item.decidedOn, "2-digit")}</p>
-                        )}
-                      </>
-                    ) : (
-                      <span className="rounded-full bg-emerald-600 px-3 py-0.5 text-[10px] text-white">Returned</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </main>
-  );
-}
 
 export default function HomeStudent() {
   const [books, setBooks] = useState([]);
@@ -933,6 +763,8 @@ export default function HomeStudent() {
   const [loadError, setLoadError] = useState("");
   const [rows, setRows] = useState([]);
   const [returningId, setReturningId] = useState(null);
+  const [modal, setModal] = useState(null);
+  const [toast, setToast] = useState("");
 
   // Toast once for each newly declined request
   const announceDeclined = (list) => {
@@ -972,8 +804,8 @@ export default function HomeStudent() {
       borrowed: r.borrowedOn,
       due: r.due,
       returned: r.returned,
-      requestedOn: r.requestedOn,
-      decidedOn: r.decidedOn,
+      requested: r.requestedOn,
+      decided: r.decidedOn,
       fine: r.fine,
       daysOverdue: r.daysOverdue,
     };
@@ -986,8 +818,6 @@ export default function HomeStudent() {
     .sort((a, b) => String(b.returned).localeCompare(String(a.returned)));
   const pending = rows.filter((r) => r.requestStatus === "pending").map(decorate);
   const declined = rows.filter((r) => r.requestStatus === "declined").map(decorate);
-  const [modal, setModal] = useState(null);
-  const [toast, setToast] = useState("");
 
   const location = useLocation();
   const [view, setView] = useState({
@@ -1025,7 +855,7 @@ export default function HomeStudent() {
   const openBorrow = (book) => setModal({ mode: "borrow", book });
   const closeModal = () => setModal(null);
 
-    const confirmBorrow = async (book) => {
+  const confirmBorrow = async (book) => {
     try {
       await api("", { method: "POST", body: JSON.stringify({ bookId: book.id }) }, BORROW_API);
       closeModal();
@@ -1082,6 +912,7 @@ export default function HomeStudent() {
           books={books}
           loading={loading}
           onOpenCategory={(slug) => go("category", slug)}
+          onOpenBorrowed={() => go("transactions")}
           onView={openView}
           onBorrow={openBorrow}
         />
@@ -1098,14 +929,18 @@ export default function HomeStudent() {
         />
       )}
       {view.page === "transactions" && (
-        <TransactionsView
+        <BorrowerTransactions
           borrowed={borrowed}
-          pending={pending}
           history={history}
+          pending={pending}
           declined={declined}
+          initialTab={location.state?.tab}
           onReturn={handleReturn}
-          onCancel={handleCancel}
-          returningId={returningId}
+          onCancelRequest={handleCancel}
+          onViewBook={(item) => {
+            const b = books.find((x) => String(x.id) === String(item.bookId));
+            if (b) openView(b);
+          }}
         />
       )}
 
