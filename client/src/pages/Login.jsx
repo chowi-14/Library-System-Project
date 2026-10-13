@@ -56,7 +56,7 @@ export default function Login() {
     e.preventDefault();
     const res = await login(form.email.trim().toLowerCase(), form.password);
     if (!res.ok) return setError(res.error);
-    navigate("/home", { replace: true });
+    navigate(res.user?.mustChangePassword ? "/profile" : "/home", { replace: true });
   };
 
   return (

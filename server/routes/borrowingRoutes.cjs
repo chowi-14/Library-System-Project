@@ -60,7 +60,11 @@ const shapeAll = async (rows) => {
             requestStatus: r.status ?? 'approved',
             due: iso(r.due_date),
             returned: iso(r.return_date),
-            status: pending ? 'Pending' : returned ? 'Returned' : 'Not Returned',
+            status: pending ? 'Pending'
+                : r.status === 'declined' ? 'Declined'
+                : r.status === 'cancelled' ? 'Cancelled'
+                : returned ? 'Returned' : 'Not Returned',
+            decidedOn: iso(r.decided_date),
             overdue: !returned && late > 0,
             daysOverdue: late,
             fine: returned ? r.fine_amount : late * FINE_PER_DAY,

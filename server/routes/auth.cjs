@@ -28,7 +28,9 @@ const publicUser = (user, profile) => ({
     yearLevel: profile?.year_level,
     department: profile?.department,
     assignedRole: profile?.assigned_role,
-    avatar: user.avatar ?? null
+    avatar: user.avatar ?? null,
+    mustChangePassword: user.must_change_password ?? false,
+    isHead: user.is_head ?? false
 })
 
 router.post('/register', async (req, res) => {
@@ -66,6 +68,103 @@ router.post('/register', async (req, res) => {
         }
 
         res.status(201).json({ message: 'Account created.' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Server error.' })
+    }
+})
+
+router.get('/setup-status', async (_req, res) => {
+    try {
+        const count = await User.countDocuments({ role: 'librarian' })
+        res.json({ needsSetup: count === 0 })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Server error.' })
+    }
+})
+
+router.post('/setup', async (req, res) => {
+    try {
+        if ((await User.countDocuments({ role: 'librarian' })) > 0)
+            return res.status(403).json({ error: 'Setup is already complete.' })
+        if (!process.env.SETUP_KEY || req.body.setupKey !== process.env.SETUP_KEY)
+            return res.status(401).json({ error: 'Invalid setup key.' })
+
+        const { firstName, lastName, email, phone_number, password, idNumber } = req.body
+        if (!firstName || !lastName || !email || !password)
+            return res.status(400).json({ error: 'Name, email and password are required.' })
+        if (password.length < 8)
+            return res.status(400).json({ error: 'Password must be at least 8 characters.' })
+
+        const normalized = email.trim().toLowerCase()
+        if (await User.findOne({ email: normalized }))
+            return res.status(409).json({ error: 'Email is already registered.' })
+
+        const user = await User.create({
+            email: normalized,
+            password_hash: await bcrypt.hash(password, 10),
+            role: 'librarian',
+            is_head: true,
+        })
+        try {
+            await Librarian.create({
+                user_id: user._id,
+                firstname: firstName.trim(),
+                lastname: lastName.trim(),
+                email: normalized,
+                phone_number,
+                id_number: idNumber,
+                assigned_role: 'Head Librarian',
+            })
+        } catch (err) {
+            await User.findByIdAndDelete(user._id)
+            throw err
+        }
+        res.status(201).json({ message: 'Head librarian created.' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Server error.' })
+    }
+})
+
+router.post('/librarians', auth, async (req, res) => {
+    try {
+        const caller = await User.findById(req.user.id)
+        if (!caller || caller.role !== 'librarian' || !caller.is_head)
+            return res.status(403).json({ error: 'Only the head librarian can add librarians.' })
+
+        const { firstName, lastName, email, phone_number, password, idNumber } = req.body
+        if (!firstName || !lastName || !email || !password)
+            return res.status(400).json({ error: 'Name, email and temporary password are required.' })
+        if (password.length < 8)
+            return res.status(400).json({ error: 'Password must be at least 8 characters.' })
+
+        const normalized = email.trim().toLowerCase()
+        if (await User.findOne({ email: normalized }))
+            return res.status(409).json({ error: 'Email is already registered.' })
+
+        const user = await User.create({
+            email: normalized,
+            password_hash: await bcrypt.hash(password, 10),
+            role: 'librarian',
+            must_change_password: true,
+        })
+        try {
+            await Librarian.create({
+                user_id: user._id,
+                firstname: firstName.trim(),
+                lastname: lastName.trim(),
+                email: normalized,
+                phone_number,
+                id_number: idNumber,
+                assigned_role: 'Librarian',
+            })
+        } catch (err) {
+            await User.findByIdAndDelete(user._id)
+            throw err
+        }
+        res.status(201).json({ message: 'Librarian account created.' })
     } catch (err) {
         console.error(err)
         res.status(500).json({ error: 'Server error.' })
@@ -134,7 +233,6 @@ router.put('/me', auth, async (req, res) => {
             updates.year_level = (b.year_level ?? b.yearLevel)?.trim()
         }
         if (user.role === 'professor') updates.department = b.department?.trim()
-        if (user.role === 'librarian') updates.assigned_role = (b.assigned_role ?? b.assignedRole)?.trim()
 
         Object.keys(updates).forEach((k) => updates[k] === undefined && delete updates[k])
 
@@ -164,6 +262,7 @@ router.put('/password', auth, async (req, res) => {
             return res.status(400).json({ error: 'Current password is incorrect.' })
 
         user.password_hash = await bcrypt.hash(newPassword, 10)
+        user.must_change_password = false
         await user.save()
         res.json({ message: 'Password changed.' })
     } catch (err) {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Camera, ChevronLeft, ChevronRight, Heart, KeyRound, LogOut, SquarePen, UserRound } from "lucide-react"
+import { Camera, ChevronLeft, ChevronRight, Eye, EyeOff, Heart, KeyRound, LogOut, SquarePen, UserPlus, UserRound } from "lucide-react"
 import Navbar from "../components/Navbar"
 import { useAuth } from "../context/useAuth"
 
@@ -26,7 +26,6 @@ const ROLE_FIELDS = {
     librarian: [
         { name: "id_number", label: "Employee ID" },
         { name: "email", label: "Faculty email", type: "email" },
-        { name: "assigned_role", label: "Assigned role" },
     ],
 }
 
@@ -94,6 +93,30 @@ function Field({ label, name, value, error, editing, onChange, type = "text", op
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"
 
+function PasswordInput({ value, onChange, hasError }) {
+    const [show, setShow] = useState(false)
+    return (
+        <div className="relative mt-1">
+            <input
+                type={show ? "text" : "password"}
+                value={value}
+                onChange={onChange}
+                className={`h-10 w-full rounded-sm border bg-white px-3 pr-10 text-sm font-semibold outline-none ${
+                    hasError ? "border-red-700" : "border-[#4a1a1f]"
+                }`}
+            />
+            <button
+                type="button"
+                onClick={() => setShow((s) => !s)}
+                aria-label={show ? "Hide password" : "Show password"}
+                className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-[#4a1a1f]"
+            >
+                {show ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+        </div>
+    )
+}
+
 function PasswordModal({ onClose, onDone }) {
     const [f, setF] = useState({ cur: "", next: "", conf: "" })
     const [touched, setTouched] = useState(false)
@@ -153,13 +176,10 @@ function PasswordModal({ onClose, onDone }) {
                     {rows.map(([k, label]) => (
                         <div key={k}>
                             <label className="block text-sm font-bold text-[#4a1a1f]">{label}</label>
-                            <input
-                                type="password"
+                            <PasswordInput
                                 value={f[k]}
                                 onChange={(e) => setF({ ...f, [k]: e.target.value })}
-                                className={`mt-1 h-10 w-full rounded-sm border bg-white px-3 text-sm font-semibold outline-none ${
-                                    touched && errors[k] ? "border-red-700" : "border-[#4a1a1f]"
-                                }`}
+                                hasError={touched && !!errors[k]}
                             />
                             {touched && errors[k] && <p className="mt-1 text-xs text-red-700">{errors[k]}</p>}
                         </div>
@@ -179,6 +199,108 @@ function PasswordModal({ onClose, onDone }) {
     )
 }
 
+function AddLibrarianModal({ onClose, onDone }) {
+    const [f, setF] = useState({
+        firstName: "", lastName: "", email: "", idNumber: "",
+        phone_number: "", password: "",
+    })
+    const [touched, setTouched] = useState(false)
+    const [error, setError] = useState("")
+    const [saving, setSaving] = useState(false)
+
+    const errors = {
+        firstName: !NAME_RE.test(f.firstName.trim()) && "Enter a valid first name",
+        lastName: !NAME_RE.test(f.lastName.trim()) && "Enter a valid last name",
+        email: !EMAIL_RE.test(f.email.trim()) && "Enter a valid email",
+        phone_number: f.phone_number && !PHONE_RE.test(f.phone_number.replace(/[\s-]/g, "")) && "Use 09XXXXXXXXX or +639XXXXXXXXX",
+        password:
+            f.password.length < 8 ? "At least 8 characters"
+            : !/[A-Za-z]/.test(f.password) || !/[0-9]/.test(f.password) ? "Use letters and numbers" : "",
+    }
+
+    const submit = async (e) => {
+        e.preventDefault()
+        setTouched(true)
+        if (Object.values(errors).some(Boolean)) return
+        setSaving(true)
+        setError("")
+        try {
+            const res = await fetch(`${API}/auth/librarians`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${localStorage.getItem("token")}`,
+                },
+                body: JSON.stringify({
+                    ...f,
+                    email: f.email.trim().toLowerCase(),
+                    phone_number: f.phone_number.replace(/[\s-]/g, ""),
+                }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data.error || "Could not create librarian.")
+            onDone()
+        } catch (err) {
+            setError(err.message === "Failed to fetch" ? "Cannot reach the server." : err.message)
+            setSaving(false)
+        }
+    }
+
+    const rows = [
+        ["firstName", "First name", "text"],
+        ["lastName", "Last name", "text"],
+        ["idNumber", "Employee ID", "text"],
+        ["email", "Faculty email", "email"],
+        ["phone_number", "Phone number (optional)", "tel"],
+        ["password", "Temporary password", "password"],
+    ]
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <form onSubmit={submit} noValidate role="dialog" aria-modal="true"
+                className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-md bg-white p-6">
+                <h2 className="text-xl font-bold text-[#4a1a1f]">Add Librarian</h2>
+                <p className="mt-1 text-xs text-[#4a1a1f]/70">
+                    They will be asked to change this temporary password on first login.
+                </p>
+                <div className="mt-4 flex flex-col gap-3">
+                    {rows.map(([k, label, type]) => (
+                        <div key={k}>
+                            <label className="block text-sm font-bold text-[#4a1a1f]">{label}</label>
+                            {type === "password" ? (
+                                <PasswordInput
+                                    value={f[k]}
+                                    onChange={(e) => setF({ ...f, [k]: e.target.value })}
+                                    hasError={touched && !!errors[k]}
+                                />
+                            ) : (
+                                <input
+                                    type={type}
+                                    value={f[k]}
+                                    onChange={(e) => setF({ ...f, [k]: e.target.value })}
+                                    className={`mt-1 h-10 w-full rounded-sm border bg-white px-3 text-sm font-semibold outline-none ${
+                                        touched && errors[k] ? "border-red-700" : "border-[#4a1a1f]"
+                                    }`}
+                                />
+                            )}
+                            {touched && errors[k] && <p className="mt-1 text-xs text-red-700">{errors[k]}</p>}
+                        </div>
+                    ))}
+                </div>
+                {error && <p className="mt-3 text-xs font-bold text-red-700">{error}</p>}
+                <div className="mt-5 flex justify-end gap-3">
+                    <button type="button" onClick={onClose} className="rounded-sm px-4 py-2 text-sm font-bold text-[#4a1a1f]/70 hover:underline">
+                        Cancel
+                    </button>
+                    <button type="submit" disabled={saving} className="rounded-sm bg-[#4a1a1f] px-4 py-2 text-sm font-bold text-white hover:bg-[#3a1717] disabled:opacity-60">
+                        {saving ? "Creating..." : "Create"}
+                    </button>
+                </div>
+            </form>
+        </div>
+    )
+}
+
 export default function Profile() {
     const navigate = useNavigate()
     const { user, logout, updateProfile, updateAvatar } = useAuth()
@@ -186,10 +308,13 @@ export default function Profile() {
     const avatar = draftAvatar !== undefined ? draftAvatar : user.avatar
     const fileRef = useRef(null)
     const [showLogout, setShowLogout] = useState(false)
-    const [showPassword, setShowPassword] = useState(false)
+    const [showPassword, setShowPassword] = useState(!!user.mustChangePassword)
+    const [showAddLibrarian, setShowAddLibrarian] = useState(false)
     const [msg, setMsg] = useState("")
     const isLibrarian = user.role === "librarian"
-    const roleLabel = user.role.charAt(0).toUpperCase() + user.role.slice(1)
+    const roleLabel = isLibrarian
+        ? (user.isHead ? "Head Librarian" : "Librarian")
+        : user.role.charAt(0).toUpperCase() + user.role.slice(1)
 
     const stats = { borrowed: 0, overdue: 0, returned: 0 }
     const favoritesCount = 0
@@ -407,6 +532,15 @@ export default function Profile() {
                                     Change Password <KeyRound size={16} />
                                 </button>
                             )}
+                            {user.isHead && !editing && (
+                                <button
+                                    type="button"
+                                    onClick={() => { setMsg(""); setShowAddLibrarian(true) }}
+                                    className="mt-3 flex w-full items-center justify-center gap-3 rounded-sm border border-[#4a1a1f] bg-white py-2 text-sm font-bold text-[#4a1a1f] hover:bg-[#f3d9c0]"
+                                >
+                                    Add Librarian <UserPlus size={16} />
+                                </button>
+                            )}
                             {msg && <p className="mt-2 text-sm font-bold text-[#0c7a43]" role="status">{msg}</p>}
                         </div>
 
@@ -450,6 +584,12 @@ export default function Profile() {
                     <PasswordModal
                         onClose={() => setShowPassword(false)}
                         onDone={() => { setShowPassword(false); setMsg("Password changed.") }}
+                    />
+                )}
+                {showAddLibrarian && (
+                    <AddLibrarianModal
+                        onClose={() => setShowAddLibrarian(false)}
+                        onDone={() => { setShowAddLibrarian(false); setMsg("Librarian account created.") }}
                     />
                 )}
                 {showLogout && (

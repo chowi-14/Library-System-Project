@@ -22,6 +22,14 @@ const userSchema = new mongoose.Schema({
     avatar: {
         type: String,
         default: null
+    },
+    must_change_password: {
+        type: Boolean,
+        default: false
+    },
+    is_head: {
+        type: Boolean,
+        default: false
     }
 })
 

@@ -7,6 +7,7 @@ import SignUp from "./pages/SignUp";
 import HomeStudent from "./pages/HomeStudent";
 import HomeLibrarian from "./pages/HomeLibrarian";
 import Profile from "./pages/Profile";
+import Setup from "./pages/Setup";
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth();
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="/student/profile" element={<ProtectedRoute><ProfileRoute /></ProtectedRoute>} />
         <Route path="/librarian/profile" element={<ProtectedRoute><ProfileRoute /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/setup" element={<Setup />} />
       </Routes>
     </AuthProvider>
   );

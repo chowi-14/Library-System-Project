@@ -780,8 +780,16 @@ function CategoryView({ books, loading, slug, onBack, onView, onBorrow }) {
   );
 }
 
-function TransactionsView({ borrowed, pending, history, onReturn, onCancel, returningId }) {
+function TransactionsView({ borrowed, pending, history, declined, onReturn, onCancel, returningId }) {
   const [tab, setTab] = useState("borrowed");
+
+  // returned loans + declined requests, newest first
+  const entries = [
+    ...history.map((h) => ({ ...h, declined: false })),
+    ...declined.map((d) => ({ ...d, declined: true })),
+  ].sort((a, b) =>
+    String(b.declined ? b.decidedOn : b.returned).localeCompare(String(a.declined ? a.decidedOn : a.returned))
+  );
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -877,10 +885,10 @@ function TransactionsView({ borrowed, pending, history, onReturn, onCancel, retu
               </tr>
             </thead>
             <tbody>
-              {history.length === 0 && (
+              {entries.length === 0 && (
                 <tr><td colSpan={7} className="p-6 text-gray-500">No history yet.</td></tr>
               )}
-              {history.map((item) => (
+              {entries.map((item) => (
                 <tr key={item.id} className="border-b border-gray-300 font-semibold">
                   <td className="p-3">
                     <Cover title={item.title} src={item.cover} className="mx-auto h-14 w-10 rounded-sm" />
@@ -888,10 +896,19 @@ function TransactionsView({ borrowed, pending, history, onReturn, onCancel, retu
                   <td className="p-3">{item.title}</td>
                   <td className="p-3">{item.author}</td>
                   <td className="p-3">{item.category}</td>
-                  <td className="p-3">{fmt(item.borrowed, "2-digit")}</td>
-                  <td className="p-3">{fmt(item.returned, "2-digit")}</td>
+                  <td className="p-3">{item.declined ? "-" : fmt(item.borrowed, "2-digit")}</td>
+                  <td className="p-3">{item.declined ? "-" : fmt(item.returned, "2-digit")}</td>
                   <td className="p-3">
-                    <span className="rounded-full bg-emerald-600 px-3 py-0.5 text-[10px] text-white">Returned</span>
+                    {item.declined ? (
+                      <>
+                        <span className="rounded-full bg-red-700 px-3 py-0.5 text-[10px] text-white">Declined</span>
+                        {item.decidedOn && (
+                          <p className="mt-1 text-[10px] text-gray-500">{fmt(item.decidedOn, "2-digit")}</p>
+                        )}
+                      </>
+                    ) : (
+                      <span className="rounded-full bg-emerald-600 px-3 py-0.5 text-[10px] text-white">Returned</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -910,10 +927,28 @@ export default function HomeStudent() {
   const [rows, setRows] = useState([]);
   const [returningId, setReturningId] = useState(null);
 
+  // Toast once for each newly declined request
+  const announceDeclined = (list) => {
+    try {
+      const declined = list.filter((r) => r.requestStatus === "declined");
+      const seen = new Set(JSON.parse(localStorage.getItem("seenDeclined") || "[]"));
+      const fresh = declined.filter((r) => !seen.has(r.id));
+      if (fresh.length === 0) return;
+      localStorage.setItem("seenDeclined", JSON.stringify([...seen, ...fresh.map((r) => r.id)]));
+      setToast(
+        fresh.length === 1
+          ? `Your request for "${fresh[0].title}" was declined.`
+          : `${fresh.length} of your borrow requests were declined.`
+      );
+    } catch { /* storage unavailable */ }
+  };
+
   const loadLoans = () =>
     Promise.all([api("", {}, BORROW_API), api()])
       .then(([tx, bk]) => {
-        setRows(Array.isArray(tx) ? tx : []);
+        const list = Array.isArray(tx) ? tx : [];
+        setRows(list);
+        announceDeclined(list);
         if (Array.isArray(bk)) setBooks(bk.map(toStudentBook));
       })
       .catch((e) => setLoadError(e.message));
@@ -931,6 +966,7 @@ export default function HomeStudent() {
       due: r.due,
       returned: r.returned,
       requestedOn: r.requestedOn,
+      decidedOn: r.decidedOn,
       fine: r.fine,
       daysOverdue: r.daysOverdue,
     };
@@ -942,6 +978,7 @@ export default function HomeStudent() {
     .map(decorate)
     .sort((a, b) => String(b.returned).localeCompare(String(a.returned)));
   const pending = rows.filter((r) => r.requestStatus === "pending").map(decorate);
+  const declined = rows.filter((r) => r.requestStatus === "declined").map(decorate);
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState("");
 
@@ -1058,6 +1095,7 @@ export default function HomeStudent() {
           borrowed={borrowed}
           pending={pending}
           history={history}
+          declined={declined}
           onReturn={handleReturn}
           onCancel={handleCancel}
           returningId={returningId}

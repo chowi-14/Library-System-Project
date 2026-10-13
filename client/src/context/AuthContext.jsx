@@ -50,7 +50,7 @@ export function AuthProvider({ children }) {
         localStorage.setItem("token", res.data.token);
         localStorage.setItem("session", JSON.stringify(res.data.user));
         setUser(res.data.user);
-        return { ok: true };
+        return { ok: true, user: res.data.user };
     };
 
     const saveUser = (next) => {

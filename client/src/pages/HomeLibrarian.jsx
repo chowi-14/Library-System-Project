@@ -1145,9 +1145,19 @@ function Footer({ onNavigate }) {
 function RequestsTab({ requests, books, onDecide }) {
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(() => new Set());
-  const pages = Math.max(1, Math.ceil(requests.length / ROWS_PER_PAGE));
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? requests.filter(
+        (r) =>
+          r.title.toLowerCase().includes(q) ||
+          r.borrower.toLowerCase().includes(q) ||
+          r.borrowerEmail.toLowerCase().includes(q)
+      )
+    : requests;
+  const pages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
   const cur = Math.min(page, pages);
-  const shown = requests.slice((cur - 1) * ROWS_PER_PAGE, cur * ROWS_PER_PAGE);
+  const shown = filtered.slice((cur - 1) * ROWS_PER_PAGE, cur * ROWS_PER_PAGE);
 
   const decide = async (r, approve) => {
     if (busy.has(r.id)) return;
@@ -1162,11 +1172,25 @@ function RequestsTab({ requests, books, onDecide }) {
       <p className="mb-4 text-[13px] text-gray-500">
         {requests.length === 0
           ? "No requests waiting for approval."
+          : q
+          ? `${filtered.length} of ${requests.length} requests match`
           : `${requests.length} ${requests.length === 1 ? "request" : "requests"} waiting for approval`}
       </p>
 
+      {requests.length > 0 && (
+        <input
+          type="search"
+          placeholder="Search by book, name, or email"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+          className={`${selectSm} mb-3 w-full md:w-80`}
+        />
+      )}
+
       {requests.length === 0 ? (
         <p className="rounded-xl bg-[#faf6f0] p-4 text-sm font-semibold text-[#0c7a43]">You're all caught up.</p>
+      ) : filtered.length === 0 ? (
+        <p className="p-6 text-center text-gray-500">No requests match your search.</p>
       ) : (
         <div className="flex flex-col gap-2.5">
           {shown.map((r) => {
@@ -1195,7 +1219,7 @@ function RequestsTab({ requests, books, onDecide }) {
             );
           })}
           <p className="text-center text-xs text-gray-500">
-            Showing {(cur - 1) * ROWS_PER_PAGE + 1}–{(cur - 1) * ROWS_PER_PAGE + shown.length} of {requests.length}
+            Showing {(cur - 1) * ROWS_PER_PAGE + 1}–{(cur - 1) * ROWS_PER_PAGE + shown.length} of {filtered.length}
           </p>
           <Pagination page={cur} totalPages={pages} onChange={setPage} />
         </div>
