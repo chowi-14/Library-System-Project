@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Navbar from "../components/Navbar";
 import Pagination from "../components/Pagination";
+import crest from "../assets/crest.webp";
 
 const API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/books`;
 const BORROW_API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/borrowings`;
@@ -1084,6 +1085,44 @@ function ProfileTab({ profile: u, onChange, notify }) {
   );
 }
 
+function Footer({ onNavigate }) {
+  return (
+    <footer className="bg-[#4a1a1f] font-serif text-[#f3d9c0]">
+      <div className="grid gap-8 px-[7%] py-10 md:grid-cols-[auto_auto_1fr] md:items-center">
+        <div className="flex items-center gap-3">
+          <img src={crest} alt="Hogwarts crest" className="h-16 w-16 object-contain" />
+          <div>
+            <p className="text-xl leading-tight">
+              Hogwarts
+              <br />
+              Library
+            </p>
+            <p className="mt-1 text-xs font-semibold">Knowledge is the truest magic.</p>
+          </div>
+        </div>
+
+        <ul className="space-y-1 text-xs md:border-x md:border-[#f3d9c0]/40 md:px-8">
+          {TABS.map(([k, label]) => (
+            <li key={k}>
+              <button type="button" onClick={() => onNavigate(k)} className="hover:underline">
+                {label}
+              </button>
+            </li>
+          ))}
+        </ul>
+
+        <div className="text-xs md:pl-4">
+          <p>
+            This is an unofficial fan-made project for school compliance, not affiliated with
+            J.K. Rowling, Warner Bros., or Wizarding World.
+          </p>
+          <p className="mt-3">Mischief Managed.</p>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
 export default function HomeLibrarian() {
   const [books, setBooks] = useState([]);
   const [apiError, setApiError] = useState("");
@@ -1313,10 +1352,10 @@ export default function HomeLibrarian() {
              : (danger ? "border-[#c0121f] bg-white text-[#c0121f]" : "border-[#4a1f1f] bg-white text-[#4a1f1f]")}`;
 
   return (
-    <div className="min-h-screen bg-white font-sans text-[#1b1b1b]">
+    <div className="flex min-h-screen flex-col bg-white font-sans text-[#1b1b1b]">
       <Navbar role="librarian" notificationCount={notes.length} onNotifications={() => setShowNotes(true)} />
 
-      <main className="mx-auto max-w-[1100px] p-6">
+      <main className="mx-auto w-full max-w-[1100px] flex-1 p-6">
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
             <h1 className="text-[26px] font-bold md:text-[34px]">
@@ -1467,6 +1506,14 @@ export default function HomeLibrarian() {
           </section>
         )}
       </main>
+
+      <Footer
+        onNavigate={(k) => {
+          if (k === "books") setBookSort({ key: "title", dir: "asc" });
+          setTab(k);
+          window.scrollTo({ top: 0 });
+        }}
+      />
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-md bg-[#1b1b1b] px-4 py-2.5 text-[13px] font-semibold text-white shadow-lg" role="status">
