@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Camera, ChevronLeft, ChevronRight, Heart, LogOut, SquarePen, UserRound } from "lucide-react"
 import Navbar from "../components/Navbar"
@@ -122,6 +122,13 @@ export default function Profile() {
     const [editing, setEditing] = useState(false)
     const [errors, setErrors] = useState({})
 
+    useEffect(() => {
+        if (editing) return
+        setProfile(initialProfile)
+        setDraft(initialProfile)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user])
+
     const values = editing ? draft : profile
 
     const startEdit = () => {
@@ -164,11 +171,21 @@ export default function Profile() {
 
     const handlePhoto = (e) => {
         const file = e.target.files?.[0]
-        if (!file) return
-        const reader = new FileReader()
-        reader.onload = () => setDraftAvatar(reader.result)
-        reader.readAsDataURL(file)
         e.target.value = ""
+        if (!file) return
+        const url = URL.createObjectURL(file)
+        const img = new Image()
+        img.onload = () => {
+            const scale = Math.min(1, 400 / Math.max(img.width, img.height))
+            const canvas = document.createElement("canvas")
+            canvas.width = Math.round(img.width * scale)
+            canvas.height = Math.round(img.height * scale)
+            canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height)
+            URL.revokeObjectURL(url)
+            setDraftAvatar(canvas.toDataURL("image/jpeg", 0.85))
+        }
+        img.onerror = () => URL.revokeObjectURL(url)
+        img.src = url
     }
 
     const handleLogout = () => {

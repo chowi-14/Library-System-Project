@@ -7,9 +7,10 @@ require('dotenv').config()
 const app = express()
 
 app.use(cors())
-app.use(express.json({ limit: '3mb' })) 
+app.use(express.json({ limit: '5mb' })) 
 app.use('/api/auth', require('./routes/auth.cjs'))
 app.use('/api/books', require('./routes/bookRoutes.cjs'))
+app.use('/api/borrowings', require('./routes/borrowingRoutes.cjs'))
 
 app.use((err, _req, res, _next) => {
     console.error(err)

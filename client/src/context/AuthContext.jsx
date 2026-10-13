@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AuthContext } from "./authContext1";
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:5001/api";
@@ -8,6 +8,23 @@ const post = async (path, body) => {
         const res = await fetch(`${API}${path}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        return res.ok ? { ok: true, data } : { ok: false, error: data.error || "Something went wrong." };
+    } catch {
+        return { ok: false, error: "Cannot reach the server." };
+    }
+};
+
+const put = async (path, body) => {
+    try {
+        const res = await fetch(`${API}${path}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
             body: JSON.stringify(body),
         });
         const data = await res.json();
@@ -41,12 +58,39 @@ export function AuthProvider({ children }) {
         setUser(next);
     };
 
+    const refresh = async () => {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        try {
+            const res = await fetch(`${API}/auth/me`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.user) saveUser(data.user);
+        } catch { /* offline: keep the cached session */ }
+    };
+
+    useEffect(() => {
+        refresh();
+        window.addEventListener("focus", refresh);
+        return () => window.removeEventListener("focus", refresh);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const updateProfile = async (changes) => {
-        saveUser({ ...user, ...changes });
+        const res = await put("/auth/me", changes);
+        if (!res.ok) return res;
+        saveUser({ ...user, ...changes, ...(res.data?.user ?? {}) });
         return { ok: true };
     };
 
-    const updateAvatar = (avatar) => saveUser({ ...user, avatar });
+    const updateAvatar = async (avatar) => {
+        const res = await put("/auth/me", { avatar });
+        if (!res.ok) return res;
+        saveUser({ ...user, avatar });
+        return { ok: true };
+    };
 
     const logout = () => {
         localStorage.removeItem("token");

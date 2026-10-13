@@ -10,7 +10,8 @@ const bookSchema = new mongoose.Schema({
     description: { type: String, required: true, trim: true, maxlength: 300 },
     image:       { type: String, default: '' },     
     status:      { type: String, enum: ['Available', 'Borrowed'], default: 'Available' },
-    cover:       { type: [String], default: ['#4a1f1f', '#eea51c'] }
+    cover:       { type: [String], default: ['#4a1f1f', '#eea51c'] },
+    copies:      { type: Number, default: 1, min: 1, max: 99 }
 }, { timestamps: true })
 
 bookSchema.set('toJSON', {

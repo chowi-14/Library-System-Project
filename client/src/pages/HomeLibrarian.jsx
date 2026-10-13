@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Navbar from "../components/Navbar";
 import Pagination from "../components/Pagination";
 
-const API = "http://localhost:5000/api/books";
+const API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/books`;
+const BORROW_API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/borrowings`;
 const ROWS_PER_PAGE = 5;
 
-const api = async (path = "", options = {}) => {
-  const res = await fetch(`${API}${path}`, {
+const api = async (path = "", options = {}, base = API) => {
+  const res = await fetch(`${base}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -20,7 +21,6 @@ const api = async (path = "", options = {}) => {
   return data;
 };
 
-const transactions = [];
 
 const selectSm = "rounded-md border border-[#2b2b2b] bg-white px-2.5 py-[7px] text-[13px]";
 const inputBase =
@@ -524,11 +524,20 @@ export default function HomeLibrarian() {
   const [toEdit, setToEdit] = useState(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
+  const [transactions, setTransactions] = useState([]);
 
   useEffect(() => {
-    api()
-      .then((data) => setBooks(Array.isArray(data) ? data : []))
-      .catch((e) => setApiError(e.message));
+    const load = () => {
+      api()
+        .then((data) => setBooks(Array.isArray(data) ? data : []))
+        .catch((e) => setApiError(e.message));
+      api("", {}, BORROW_API)
+        .then((data) => setTransactions(Array.isArray(data) ? data : []))
+        .catch((e) => setApiError(e.message));
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
   }, []);
 
   const q = query.trim().toLowerCase();
@@ -609,7 +618,7 @@ export default function HomeLibrarian() {
   ];
 
   const txCols = [
-    { key: "cover", label: "", render: (r) => <Cover colors={r.cover} image={r.image} /> },
+    { key: "cover", label: "", render: (r) => <Cover colors={r.cover} image={books.find((b) => b.id === r.bookId)?.image} /> },
     { key: "title", label: "Title", sortable: true, render: (r) => <strong>{r.title}</strong> },
     { key: "borrower", label: "Borrower", sortable: true },
     { key: "borrowedOn", label: "Borrowed On", sortable: true, render: (r) => fmt(r.borrowedOn) },

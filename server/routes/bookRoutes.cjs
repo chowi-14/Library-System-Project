@@ -2,6 +2,7 @@ const express = require('express')
 const mongoose = require('mongoose')
 const router = express.Router()
 const Book = require('../models/Book.cjs')
+const Borrowing = require('../models/Borrowing.cjs')
 const auth = require('../middleware/auth.cjs')
 
 const requireLibrarian = (req, res, next) =>
@@ -9,7 +10,7 @@ const requireLibrarian = (req, res, next) =>
         ? next()
         : res.status(403).json({ error: 'Librarians only.' })
 
-const FIELDS = ['title', 'author', 'publisher', 'category', 'published', 'description', 'image']
+const FIELDS = ['title', 'author', 'publisher', 'category', 'published', 'description', 'image', 'copies']
 const pick = (body) =>
     Object.fromEntries(FIELDS.filter((k) => body[k] !== undefined).map((k) => [k, body[k]]))
 
@@ -55,6 +56,8 @@ router.put('/:id', auth, requireLibrarian, checkId, async (req, res) => {
 
 router.delete('/:id', auth, requireLibrarian, checkId, async (req, res) => {
     try {
+        if (await Borrowing.exists({ book_id: req.params.id, return_date: null }))
+            return res.status(409).json({ error: "This book is currently borrowed and can't be deleted." })
         const book = await Book.findByIdAndDelete(req.params.id)
         if (!book) return res.status(404).json({ error: 'Book not found.' })
         res.json({ message: 'Book deleted.' })

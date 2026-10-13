@@ -21,12 +21,14 @@ const publicUser = (user, profile) => ({
     email: user.email,
     firstName: profile?.firstname,
     lastName: profile?.lastname,
-    phone_number: profile?.phone_number,
+    phone_number: profile?.phone_number ?? 
+    profile?.phone ?? '',
     idNumber: profile?.id_number,
     course: profile?.course,
     yearLevel: profile?.year_level,
     department: profile?.department,
-    assignedRole: profile?.assigned_role
+    assignedRole: profile?.assigned_role,
+    avatar: user.avatar ?? null
 })
 
 router.post('/register', async (req, res) => {
@@ -111,8 +113,14 @@ router.put('/me', auth, async (req, res) => {
             if (await User.findOne({ email, _id: { $ne: user._id } }))
                 return res.status(409).json({ error: 'Email is already registered.' })
             user.email = email
-            await user.save()
         }
+
+        if (b.avatar !== undefined) {
+            if (b.avatar !== null && !String(b.avatar).startsWith('data:image/'))
+                return res.status(400).json({ error: 'Invalid image.' })
+            user.avatar = b.avatar
+        }
+        await user.save()
 
         const updates = {
             firstname: (b.firstName ?? b.firstname)?.trim(),

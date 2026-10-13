@@ -18,6 +18,10 @@ const userSchema = new mongoose.Schema({
     is_active: {
         type: Boolean,
         default: true
+    },
+    avatar: {
+        type: String,
+        default: null
     }
 })
 
