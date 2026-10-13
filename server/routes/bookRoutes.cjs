@@ -10,7 +10,7 @@ const requireLibrarian = (req, res, next) =>
         ? next()
         : res.status(403).json({ error: 'Librarians only.' })
 
-const FIELDS = ['title', 'author', 'publisher', 'category', 'published', 'description', 'image', 'copies']
+const FIELDS = ['title', 'author', 'publisher', 'category', 'subcategory', 'published', 'description', 'image', 'copies']
 const pick = (body) =>
     Object.fromEntries(FIELDS.filter((k) => body[k] !== undefined).map((k) => [k, body[k]]))
 

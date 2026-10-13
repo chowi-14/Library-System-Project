@@ -214,7 +214,7 @@ const Badge = ({ status, overdue }) => {
 };
 
 const CATEGORIES = ["Fiction", "Non-Fiction", "Academic", "Restricted"];
-const EMPTY_FORM = { title: "", author: "", publisher: "", category: "", published: "", description: "", image: "", copies: "1" };
+const EMPTY_FORM = { title: "", author: "", publisher: "", category: "", subcategory: "", published: "", description: "", image: "", copies: "1" };
 const DESC_MAX = 300;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -255,6 +255,10 @@ const validate = (f) => {
   else if (publisher.length > 60) e.publisher = "Keep it under 60 characters.";
 
   if (!f.category) e.category = "Choose a category.";
+
+  const sub = (f.subcategory || "").trim();
+  if (sub.length > 40) e.subcategory = "Keep it under 40 characters.";
+  else if (sub && !/^[\p{L}\p{N}\s&'-]+$/u.test(sub)) e.subcategory = "Use letters, numbers, spaces, & ' - only.";
 
   if (!f.published) e.published = "Pick a publish date.";
   else if (f.published > todayISO()) e.published = "Date can't be in the future.";
@@ -325,13 +329,14 @@ function Field({ label, error, counter, children }) {
   );
 }
 
-function BookFormModal({ book, onClose, onSave }) {
+function BookFormModal({ book, books = [], onClose, onSave }) {
   const editing = !!book;
   const isData = !!book?.image && book.image.startsWith("data:");
   const [form, setForm] = useState(() =>
     book
       ? {
           title: book.title, author: book.author, publisher: book.publisher, category: book.category,
+          subcategory: book.subcategory || "",
           published: book.published, description: book.description || "", image: isData ? "" : book.image || "",
           copies: String(book.copies ?? 1),
         }
@@ -393,6 +398,7 @@ function BookFormModal({ book, onClose, onSave }) {
         author: form.author.trim(),
         publisher: form.publisher.trim(),
         category: form.category,
+        subcategory: form.subcategory.trim(),
         published: form.published,
         description: form.description.trim(),
         image: upload ? upload.data : form.image.trim(),
@@ -424,7 +430,10 @@ function BookFormModal({ book, onClose, onSave }) {
 
         <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
           <Field label="Category" error={err("category")}>
-            <select {...bind("category")}>
+            <select
+              {...bind("category")}
+              onChange={(e) => setForm({ ...form, category: e.target.value, subcategory: "" })}
+            >
               <option value="" disabled>Choose a Category</option>
               {CATEGORIES.map((c) => <option key={c} className="text-[#1b1b1b]">{c}</option>)}
             </select>
@@ -433,6 +442,24 @@ function BookFormModal({ book, onClose, onSave }) {
             <input type="date" max={todayISO()} {...bind("published")} />
           </Field>
         </div>
+
+        <Field label="Subcategory (optional)" error={err("subcategory")}>
+          <input
+            type="text"
+            list="subcategory-options"
+            maxLength={40}
+            disabled={!form.category}
+            placeholder={form.category ? "Pick one or type a new one" : "Choose a category first"}
+            {...bind("subcategory")}
+          />
+          <datalist id="subcategory-options">
+            {[...new Set(
+              books
+                .filter((b) => b.category === form.category && b.subcategory)
+                .map((b) => b.subcategory)
+            )].sort().map((s) => <option key={s} value={s} />)}
+          </datalist>
+        </Field>
 
         <Field
           label="Description"
@@ -579,9 +606,9 @@ const buildNotifications = (transactions, books, requests = []) => {
 };
 
 // ---------- CSV import ----------
-const CSV_TEMPLATE = `title,author,publisher,category,published,copies,description,image
-The Hobbit,J.R.R. Tolkien,Allen & Unwin,Fiction,1937-09-21,3,A hobbit goes on an unexpected adventure.,
-A Brief History of Time,Stephen Hawking,Bantam Books,Non-Fiction,1988-04-01,2,An introduction to cosmology for general readers.,https://example.com/cover.jpg
+const CSV_TEMPLATE = `title,author,publisher,category,published,copies,description,image,subcategory
+The Hobbit,J.R.R. Tolkien,Allen & Unwin,Fiction,1937-09-21,3,A hobbit goes on an unexpected adventure.,,Fantasy
+A Brief History of Time,Stephen Hawking,Bantam Books,Non-Fiction,1988-04-01,2,An introduction to cosmology for general readers.,https://example.com/cover.jpg,Cosmology
 `;
 const REQUIRED_COLS = ["title", "author", "publisher", "category", "published", "description"];
 const MAX_IMPORT_ROWS = 500;
@@ -626,7 +653,7 @@ const readImport = (text, existing) => {
     const cat = CATEGORIES.find((c) => c.toLowerCase() === cell(r, "category").toLowerCase());
     const form = {
       title: cell(r, "title"), author: cell(r, "author"), publisher: cell(r, "publisher"),
-      category: cat || "", published: cell(r, "published"), description: cell(r, "description"),
+      category: cat || "", subcategory: cell(r, "subcategory"), published: cell(r, "published"), description: cell(r, "description"),
       image: cell(r, "image"), copies: cell(r, "copies") || "1",
     };
     const e = validate(form);
@@ -1399,6 +1426,7 @@ export default function HomeLibrarian() {
     { key: "author", label: "Author", sortable: true },
     { key: "publisher", label: "Publisher", sortable: true },
     { key: "category", label: "Category", sortable: true },
+    { key: "subcategory", label: "Subcategory", sortable: true, render: (r) => r.subcategory || "-" },
     { key: "published", label: "Published Date", sortable: true, render: (r) => fmt(r.published) },
     { key: "status", label: "Status", sortable: true, render: (r) => <Badge status={r.status} /> },
     {
@@ -1660,19 +1688,9 @@ export default function HomeLibrarian() {
         </div>
       )}
 
-      {showModal && <BookFormModal onClose={() => setShowModal(false)} onSave={addBook} />}
-      {toEdit && <BookFormModal key={toEdit.id} book={toEdit} onClose={() => setToEdit(null)} onSave={saveEdit} />}
+      {showModal && <BookFormModal books={books} onClose={() => setShowModal(false)} onSave={addBook} />}
+      {toEdit && <BookFormModal key={toEdit.id} book={toEdit} books={books} onClose={() => setToEdit(null)} onSave={saveEdit} />}
       {toDelete && <ConfirmDeleteModal book={toDelete} onCancel={() => setToDelete(null)} onConfirm={deleteBook} />}
-      {issueCtx && (
-        <IssueModal
-          students={students}
-          books={books}
-          transactions={transactions}
-          initial={issueCtx}
-          onClose={() => setIssueCtx(null)}
-          onIssue={issueBook}
-        />
-      )}
       {openStudent && (
         <StudentModal
           student={openStudent}
@@ -1681,6 +1699,16 @@ export default function HomeLibrarian() {
           onIssue={(s) => setIssueCtx({ student: s })}
           onReturn={returnTx}
           onPayFine={payFine}
+        />
+      )}
+      {issueCtx && (
+        <IssueModal
+          students={students}
+          books={books}
+          transactions={transactions}
+          initial={issueCtx}
+          onClose={() => setIssueCtx(null)}
+          onIssue={issueBook}
         />
       )}
       {showImport && (

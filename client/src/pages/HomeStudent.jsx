@@ -36,6 +36,7 @@ const toStudentBook = (b) => ({
   title: b.title,
   author: b.author,
   category: (b.category || "").toLowerCase(),
+  subcategory: b.subcategory || "",
   released: b.published,
   cover: b.image || undefined,
   description: b.description,
@@ -235,6 +236,12 @@ function BookModal({ book, mode, alreadyBorrowed, alreadyRequested, onClose, onC
                 <dt className="text-xs font-semibold uppercase tracking-wide text-gray-400">Category</dt>
                 <dd className="mt-0.5 font-semibold">{category?.label ?? "Uncategorized"}</dd>
               </div>
+              {book.subcategory && (
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-gray-400">Subcategory</dt>
+                  <dd className="mt-0.5 font-semibold">{book.subcategory}</dd>
+                </div>
+              )}
             </dl>
 
             <div className="mt-6">

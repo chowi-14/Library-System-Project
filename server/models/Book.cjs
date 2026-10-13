@@ -6,6 +6,7 @@ const bookSchema = new mongoose.Schema({
     author:      { type: String, required: true, trim: true, maxlength: 60 },
     publisher:   { type: String, required: true, trim: true, maxlength: 60 },
     category:    { type: String, required: true },
+    subcategory: { type: String, trim: true, maxlength: 40, default: '' },
     published:   { type: String, required: true },   
     description: { type: String, required: true, trim: true, maxlength: 300 },
     image:       { type: String, default: '' },     
