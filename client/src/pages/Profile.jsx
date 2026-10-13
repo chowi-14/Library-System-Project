@@ -398,7 +398,7 @@ export default function Profile() {
 
                         <div className="mt-4">
                             <Field label="Phone Number" name="phone_number" type="tel" value={values.phone_number} error={errors.phone_number} {...fieldProps} />
-                            {isLibrarian && !editing && (
+                            {!editing && (
                                 <button
                                     type="button"
                                     onClick={() => { setMsg(""); setShowPassword(true) }}

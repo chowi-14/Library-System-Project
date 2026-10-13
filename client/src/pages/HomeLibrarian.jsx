@@ -540,7 +540,7 @@ const localISO = () => new Date().toISOString().slice(0, 10); // server dates ar
 const isToday = (iso) => !!iso && String(iso).slice(0, 10) === localISO();
 const copiesLeft = (b) => b.copiesAvailable ?? (b.status === "Available" ? 1 : 0);
 const isReturned = (t) => t.status === "Returned";
-const TABS = [["overview", "Overview"], ["books", "Books"], ["borrowers", "Borrowers"]];
+const TABS = [["overview", "Overview"], ["books", "Books"], ["borrowers", "Borrowers"], ["requests", "Requests"]];
 const TONES = { red: "#c0121f", amber: "#eea51c", maroon: "#4a1f1f", green: "#0c7a43" };
 
 const eligibility = (student, book, transactions) => {
@@ -556,7 +556,7 @@ const eligibility = (student, book, transactions) => {
   return null;
 };
 
-const buildNotifications = (transactions, books) => {
+const buildNotifications = (transactions, books, requests = []) => {
   const out = [];
   const now = Date.now();
   for (const t of transactions) {
@@ -568,6 +568,9 @@ const buildNotifications = (transactions, books) => {
     if (isReturned(t) && t.fine > 0 && !t.finePaid) {
       out.push({ tone: "red", title: `Unpaid fine: ${peso(t.fine)}`, sub: `${t.borrower} · ${t.title}` });
     }
+  }
+  for (const r of requests) {
+    out.push({ tone: "amber", title: `Borrow request: ${r.title}`, sub: `${r.borrower} is waiting for approval.` });
   }
   for (const b of books) {
     if (copiesLeft(b) === 0) out.push({ tone: "maroon", title: `No copies left: ${b.title}`, sub: `All ${b.totalCopies ?? 1} copies are borrowed.` });
@@ -855,7 +858,7 @@ function NotificationsModal({ notes, onClose }) {
 }
 
 // ---------- Overview ----------
-function Overview({ books, transactions, students, onAction, onStat }) {
+function Overview({ books, transactions, students, pending = 0, onAction, onStat }) {
   const outstanding = transactions.filter((t) => t.fine > 0 && !t.finePaid).reduce((s, t) => s + t.fine, 0);
   const stats = [
     ["Total Books", books.length, "bg-[#e4f1ee]"],
@@ -868,17 +871,32 @@ function Overview({ books, transactions, students, onAction, onStat }) {
   const borrowedToday = transactions.filter((t) => isToday(t.borrowedOn)).length;
   const returnedToday = transactions.filter((t) => isReturned(t) && isToday(t.returned)).length;
   const recent = transactions.slice(0, 5);
-  const actions = [["issue", "Issue"], ["add", "Add Book"], ["import", "Import"], ["students", "Students"]];
+  const actions = [["issue", "Issue"], ["add", "Add Book"], ["import", "Import"]];
   const h = "mb-3 border-b border-[#eea51c]/60 pb-1 text-xl font-bold text-[#4a1f1f]";
 
   return (
     <>
       <p className="mb-3 text-sm italic text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
-      <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="mb-8 grid grid-cols-3 gap-3">
         {actions.map(([k, label]) => (
           <button key={k} onClick={() => onAction(k)} className="cursor-pointer rounded-xl border border-[#eea51c] bg-[#4a1f1f] py-3 text-sm font-semibold text-white hover:opacity-90">{label}</button>
         ))}
       </div>
+
+      {pending > 0 && (
+        <button
+          onClick={() => onAction("requests")}
+          className="mb-8 flex w-full cursor-pointer items-center justify-between rounded-xl border border-[#eea51c]/70 bg-[#eea51c]/15 px-4 py-3.5 text-left hover:bg-[#eea51c]/25"
+        >
+          <span>
+            <strong className="block text-sm">
+              {pending === 1 ? "1 request waiting for approval" : `${pending} requests waiting for approval`}
+            </strong>
+            <span className="text-xs text-gray-600">Click to approve or decline</span>
+          </span>
+          <span className="text-xl text-[#4a1f1f]">›</span>
+        </button>
+      )}
 
       <h2 className={h}>Library at a Glance</h2>
       <section className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
@@ -1123,6 +1141,69 @@ function Footer({ onNavigate }) {
   );
 }
 
+// ---------- Borrow requests page ----------
+function RequestsTab({ requests, books, onDecide }) {
+  const [page, setPage] = useState(1);
+  const [busy, setBusy] = useState(() => new Set());
+  const pages = Math.max(1, Math.ceil(requests.length / ROWS_PER_PAGE));
+  const cur = Math.min(page, pages);
+  const shown = requests.slice((cur - 1) * ROWS_PER_PAGE, cur * ROWS_PER_PAGE);
+
+  const decide = async (r, approve) => {
+    if (busy.has(r.id)) return;
+    setBusy((s) => new Set(s).add(r.id));
+    await onDecide(r, approve);
+    setBusy((s) => { const n = new Set(s); n.delete(r.id); return n; });
+  };
+
+  return (
+    <section className="mb-10">
+      <h2 className="mb-1 text-xl font-bold">Borrow Requests</h2>
+      <p className="mb-4 text-[13px] text-gray-500">
+        {requests.length === 0
+          ? "No requests waiting for approval."
+          : `${requests.length} ${requests.length === 1 ? "request" : "requests"} waiting for approval`}
+      </p>
+
+      {requests.length === 0 ? (
+        <p className="rounded-xl bg-[#faf6f0] p-4 text-sm font-semibold text-[#0c7a43]">You're all caught up.</p>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {shown.map((r) => {
+            const isBusy = busy.has(r.id);
+            return (
+              <div key={r.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#4a1f1f]/20 bg-white p-3">
+                <Cover colors={r.cover} image={books.find((b) => b.id === r.bookId)?.image} />
+                <div className="min-w-0 flex-1">
+                  <strong className="block">{r.title}</strong>
+                  <span className="block text-[13px]">{r.borrower} ({r.borrowerEmail})</span>
+                  <span className="block text-xs text-gray-500">Requested {fmt(r.requestedOn)}</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    disabled={isBusy}
+                    onClick={() => decide(r, false)}
+                    className={`${btnBase} border border-[#c0121f] bg-white text-[#c0121f] hover:bg-red-50`}
+                  >
+                    Decline
+                  </button>
+                  <button disabled={isBusy} onClick={() => decide(r, true)} className={btnPrimary}>
+                    {isBusy ? "Working..." : "Approve"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          <p className="text-center text-xs text-gray-500">
+            Showing {(cur - 1) * ROWS_PER_PAGE + 1}–{(cur - 1) * ROWS_PER_PAGE + shown.length} of {requests.length}
+          </p>
+          <Pagination page={cur} totalPages={pages} onChange={setPage} />
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function HomeLibrarian() {
   const [books, setBooks] = useState([]);
   const [apiError, setApiError] = useState("");
@@ -1132,6 +1213,9 @@ export default function HomeLibrarian() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
   const [transactions, setTransactions] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [seenNotes, setSeenNotes] = useState(() => new Set());
+  const returning = useRef(new Set());
   const [tab, setTab] = useState("overview");
   const [borrowerView, setBorrowerView] = useState("lookup");
   const [students, setStudents] = useState([]);
@@ -1153,7 +1237,14 @@ export default function HomeLibrarian() {
   const reload = () => {
     Promise.all([api(), api("", {}, BORROW_API).catch(() => [])])
       .then(([bookData, txData]) => {
-        const txs = Array.isArray(txData) ? txData : [];
+        const all = Array.isArray(txData) ? txData : [];
+        // pending / declined / cancelled rows are requests, not loans
+        const txs = all.filter((t) => t.requestStatus === "approved");
+        setRequests(
+          all
+            .filter((t) => t.requestStatus === "pending")
+            .sort((a, b) => String(a.requestedOn).localeCompare(String(b.requestedOn)))
+        );
         const out = {};
         txs.forEach((t) => { if (t.status !== "Returned") out[t.bookId] = (out[t.bookId] || 0) + 1; });
         setTransactions(txs);
@@ -1230,11 +1321,22 @@ export default function HomeLibrarian() {
   };
 
   const returnTx = async (t) => {
+    if (returning.current.has(t.id)) return; // ignore double clicks
+    returning.current.add(t.id);
     try {
       await api(`/${t.id}/return`, { method: "PUT" }, BORROW_API);
-      reload();
       notify(t.fine > 0 ? `Returned "${t.title}". Fine due: ${peso(t.fine)}.` : `Returned "${t.title}".`);
     } catch (e) { notify(e.message); }
+    returning.current.delete(t.id);
+    reload();
+  };
+
+  const decide = async (r, approve) => {
+    try {
+      await api(`/${r.id}/${approve ? "approve" : "decline"}`, { method: "PUT" }, BORROW_API);
+      notify(approve ? `Approved "${r.title}" for ${r.borrower}.` : `Declined the request for "${r.title}".`);
+    } catch (e) { notify(e.message); }
+    reload();
   };
 
   const payFine = async (t) => {
@@ -1316,7 +1418,13 @@ export default function HomeLibrarian() {
     { key: "actions", label: "Actions", render: (r) => <TxActions t={r} onReturn={returnTx} onPayFine={payFine} /> },
   ];
 
-  const notes = buildNotifications(transactions, books);
+  const notes = buildNotifications(transactions, books, requests);
+  const noteKey = (n) => `${n.title}|${n.sub}`;
+  const unseen = notes.filter((n) => !seenNotes.has(noteKey(n))).length;
+  const openNotes = () => {
+    setSeenNotes((s) => new Set([...s, ...notes.map(noteKey)]));
+    setShowNotes(true);
+  };
   const overdueTotal = transactions.filter((t) => t.overdue).length;
 
   const sq = studentQuery.trim().toLowerCase();
@@ -1343,6 +1451,8 @@ export default function HomeLibrarian() {
     if (k === "issue") setIssueCtx({});
     else if (k === "add") setShowModal(true);
     else if (k === "import") setShowImport(true);
+    else if (k === "requests") setTab("requests");
+    else if (k === "requests") setTab("requests");
     else { setTab("borrowers"); setBorrowerView("lookup"); }
   };
 
@@ -1353,7 +1463,7 @@ export default function HomeLibrarian() {
 
   return (
     <div className="flex min-h-screen flex-col bg-white font-sans text-[#1b1b1b]">
-      <Navbar role="librarian" notificationCount={notes.length} onNotifications={() => setShowNotes(true)} />
+      <Navbar role="librarian" notificationCount={unseen} onNotifications={openNotes} />
 
       <main className="mx-auto w-full max-w-[1100px] flex-1 p-6">
         <div className="mb-5 flex items-center justify-between gap-3">
@@ -1375,6 +1485,9 @@ export default function HomeLibrarian() {
               }`}
             >
               {label}
+              {k === "requests" && requests.length > 0 && (
+                <span className="ml-1.5 rounded-full bg-[#eea51c] px-1.5 text-[11px] font-bold text-white">{requests.length}</span>
+              )}
               {k === "borrowers" && overdueTotal > 0 && (
                 <span className="ml-1.5 rounded-full bg-[#c0121f] px-1.5 text-[11px] font-bold text-white">{overdueTotal}</span>
               )}
@@ -1389,8 +1502,10 @@ export default function HomeLibrarian() {
         )}
 
         {tab === "overview" && (
-          <Overview books={books} transactions={transactions} students={students} onAction={onAction} onStat={goStat} />
+          <Overview books={books} transactions={transactions} students={students} pending={requests.length} onAction={onAction} onStat={goStat} />
         )}
+
+        {tab === "requests" && <RequestsTab requests={requests} books={books} onDecide={decide} />}
 
         {tab === "books" && (
           <section className="mb-10">

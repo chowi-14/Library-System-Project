@@ -7,8 +7,10 @@ import { useLocation } from "react-router-dom";
 
 const API = "http://localhost:5001/api/books";
 
-const api = async (path = "", options = {}) => {
-  const res = await fetch(`${API}${path}`, {
+const BORROW_API = "http://localhost:5001/api/borrowings";
+
+const api = async (path = "", options = {}, base = API) => {
+  const res = await fetch(`${base}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -148,11 +150,11 @@ function Footer({ onOpenCategory }) {
   );
 }
 
-function BookModal({ book, mode, alreadyBorrowed, onClose, onConfirm }) {
+function BookModal({ book, mode, alreadyBorrowed, alreadyRequested, onClose, onConfirm }) {
   const category = categories.find((c) => c.slug === book.category);
   const available = book.status === "Available";
   const accent = category?.color ?? "#4a1a1f";
-  const canBorrow = available && !alreadyBorrowed;
+  const canBorrow = available && !alreadyBorrowed && !alreadyRequested;
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -246,7 +248,12 @@ function BookModal({ book, mode, alreadyBorrowed, onClose, onConfirm }) {
               {alreadyBorrowed && (
                 <p className="mb-3 text-sm font-semibold text-red-700">You already borrowed this book.</p>
               )}
-              {!available && !alreadyBorrowed && (
+              {alreadyRequested && !alreadyBorrowed && (
+                <p className="mb-3 text-sm font-semibold text-amber-700">
+                  Request sent. Waiting for librarian approval.
+                </p>
+              )}
+              {!available && !alreadyBorrowed && !alreadyRequested && (
                 <p className="mb-3 text-sm font-semibold text-amber-700">
                   This book is currently on hold.
                 </p>
@@ -258,7 +265,7 @@ function BookModal({ book, mode, alreadyBorrowed, onClose, onConfirm }) {
                     onClick={() => onConfirm(book)}
                     className="inline-flex items-center gap-2 rounded-full bg-[#4a1a1f] px-6 py-2.5 text-sm font-semibold text-white shadow-md transition hover:brightness-125"
                   >
-                    {mode === "borrow" ? "Confirm borrow" : "Borrow this book"} <ArrowRight size={14} />
+                    {mode === "borrow" ? "Send request" : "Request to borrow"} <ArrowRight size={14} />
                   </button>
                 )}
                 <button
@@ -487,7 +494,7 @@ function PromoBanner({ onAction }) {
         <div className="relative flex flex-wrap items-center justify-between gap-6">
           <div>
             <h2 className="font-serif text-3xl sm:text-4xl">
-              Borrow any available book for <span className="text-[#e9c27a]">7 days</span>.
+              Borrow any available book for <span className="text-[#e9c27a]">14 days</span>.
             </h2>
             <p className="mt-2 text-sm opacity-80">Return on time and keep your record clean. Mischief managed.</p>
           </div>
@@ -773,7 +780,7 @@ function CategoryView({ books, loading, slug, onBack, onView, onBorrow }) {
   );
 }
 
-function TransactionsView({ borrowed, history, onReturn }) {
+function TransactionsView({ borrowed, pending, history, onReturn, onCancel, returningId }) {
   const [tab, setTab] = useState("borrowed");
 
   const today = new Date();
@@ -791,12 +798,38 @@ function TransactionsView({ borrowed, history, onReturn }) {
         <button type="button" onClick={() => setTab("borrowed")} className={tabClass("borrowed")}>
           Borrowed Books
         </button>
+        <button type="button" onClick={() => setTab("pending")} className={tabClass("pending")}>
+          Pending{pending.length > 0 ? ` (${pending.length})` : ""}
+        </button>
         <button type="button" onClick={() => setTab("history")} className={tabClass("history")}>
           History
         </button>
       </div>
 
-      {tab === "borrowed" ? (
+      {tab === "pending" ? (
+        <ul className="mt-6 space-y-4">
+          {pending.length === 0 && <li className="text-sm text-gray-500">No pending requests.</li>}
+          {pending.map((item) => (
+            <li key={item.id} className="flex items-center gap-4 rounded-md border border-transparent bg-gray-100 p-3">
+              <Cover title={item.title} src={item.cover} className="h-14 w-10 shrink-0 rounded-sm" />
+              <div className="flex-1">
+                <h3 className="font-bold leading-tight">
+                  {item.title} <span className="ml-1 text-[10px] font-normal">{item.author}</span>
+                </h3>
+                <p className="mt-1 text-[11px] font-semibold text-gray-700">Requested: {fmt(item.requestedOn)}</p>
+                <p className="text-[11px] font-semibold text-amber-700">Waiting for librarian approval</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onCancel(item)}
+                className="rounded bg-red-700 px-6 py-1 text-xs font-semibold text-white hover:bg-red-800"
+              >
+                Cancel request
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : tab === "borrowed" ? (
         <ul className="mt-6 space-y-4">
           {borrowed.length === 0 && <li className="text-sm text-gray-500">No borrowed books.</li>}
           {borrowed.map((item) => {
@@ -819,13 +852,14 @@ function TransactionsView({ borrowed, history, onReturn }) {
                 <button
                   type="button"
                   onClick={() => onReturn(item)}
-                  className={`rounded px-6 py-1 text-xs font-semibold ${
+                  disabled={returningId === item.id}
+                  className={`rounded px-6 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
                     overdue
                       ? "bg-red-700 text-white hover:bg-red-800"
                       : "border border-gray-500 bg-white hover:bg-gray-100"
                   }`}
                 >
-                  Return
+                  {returningId === item.id ? "Returning..." : "Return"}
                 </button>
               </li>
             );
@@ -873,8 +907,41 @@ export default function HomeStudent() {
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [borrowed, setBorrowed] = useState([]);
-  const [history, setHistory] = useState([]);
+  const [rows, setRows] = useState([]);
+  const [returningId, setReturningId] = useState(null);
+
+  const loadLoans = () =>
+    Promise.all([api("", {}, BORROW_API), api()])
+      .then(([tx, bk]) => {
+        setRows(Array.isArray(tx) ? tx : []);
+        if (Array.isArray(bk)) setBooks(bk.map(toStudentBook));
+      })
+      .catch((e) => setLoadError(e.message));
+
+  const decorate = (r) => {
+    const b = books.find((x) => String(x.id) === String(r.bookId));
+    return {
+      id: r.id,
+      bookId: r.bookId,
+      title: r.title,
+      author: b?.author ?? "",
+      category: categories.find((c) => c.slug === b?.category)?.label ?? "",
+      cover: b?.cover,
+      borrowed: r.borrowedOn,
+      due: r.due,
+      returned: r.returned,
+      requestedOn: r.requestedOn,
+      fine: r.fine,
+      daysOverdue: r.daysOverdue,
+    };
+  };
+  const loans = rows.filter((r) => r.requestStatus === "approved");
+  const borrowed = loans.filter((r) => !r.returned).map(decorate);
+  const history = loans
+    .filter((r) => r.returned)
+    .map(decorate)
+    .sort((a, b) => String(b.returned).localeCompare(String(a.returned)));
+  const pending = rows.filter((r) => r.requestStatus === "pending").map(decorate);
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState("");
 
@@ -892,12 +959,20 @@ export default function HomeStudent() {
   }, []);
 
   useEffect(() => {
+    loadLoans();
+    window.addEventListener("focus", loadLoans);
+    return () => window.removeEventListener("focus", loadLoans);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 3500);
     return () => clearTimeout(t);
   }, [toast]);
 
   const go = (page, slug = null) => {
+    if (page === "transactions") loadLoans();
     setView({ page, slug });
     window.scrollTo({ top: 0 });
   };
@@ -906,31 +981,43 @@ export default function HomeStudent() {
   const openBorrow = (book) => setModal({ mode: "borrow", book });
   const closeModal = () => setModal(null);
 
-  const iso = (d) => d.toLocaleDateString("en-CA");
-
-  const confirmBorrow = (book) => {
-    const due = new Date();
-    due.setDate(due.getDate() + 7);
-    setBorrowed((list) => [
-      {
-        id: Date.now(),
-        bookId: book.id,
-        title: book.title,
-        author: book.author,
-        category: categories.find((c) => c.slug === book.category)?.label ?? "",
-        cover: book.cover,
-        borrowed: iso(new Date()),
-        due: iso(due),
-      },
-      ...list,
-    ]);
-    closeModal();
-    setToast(`You borrowed "${book.title}". Due ${fmt(iso(due))}.`);
+    const confirmBorrow = async (book) => {
+    try {
+      await api("", { method: "POST", body: JSON.stringify({ bookId: book.id }) }, BORROW_API);
+      closeModal();
+      await loadLoans();
+      setToast(`Request sent for "${book.title}". Waiting for librarian approval.`);
+    } catch (e) {
+      setToast(e.message);
+    }
   };
 
-  const handleReturn = (item) => {
-    setBorrowed((list) => list.filter((b) => b.id !== item.id));
-    setHistory((list) => [{ ...item, returned: iso(new Date()) }, ...list]);
+  const handleReturn = async (item) => {
+    if (returningId) return;
+    setReturningId(item.id);
+    try {
+      await api(`/${item.id}/return`, { method: "PUT" }, BORROW_API);
+      await loadLoans();
+      setToast(
+        item.fine > 0
+          ? `Returned "${item.title}". Fine due: ₱${Number(item.fine).toFixed(2)}.`
+          : `Returned "${item.title}".`
+      );
+    } catch (e) {
+      setToast(e.message);
+    } finally {
+      setReturningId(null);
+    }
+  };
+
+  const handleCancel = async (item) => {
+    try {
+      await api(`/${item.id}/cancel`, { method: "PUT" }, BORROW_API);
+      await loadLoans();
+      setToast(`Request cancelled for "${item.title}".`);
+    } catch (e) {
+      setToast(e.message);
+    }
   };
 
   return (
@@ -967,7 +1054,14 @@ export default function HomeStudent() {
         />
       )}
       {view.page === "transactions" && (
-        <TransactionsView borrowed={borrowed} history={history} onReturn={handleReturn} />
+        <TransactionsView
+          borrowed={borrowed}
+          pending={pending}
+          history={history}
+          onReturn={handleReturn}
+          onCancel={handleCancel}
+          returningId={returningId}
+        />
       )}
 
       {view.page !== "transactions" && <Footer onOpenCategory={(slug) => go("category", slug)} />}
@@ -976,7 +1070,8 @@ export default function HomeStudent() {
         <BookModal
           book={modal.book}
           mode={modal.mode}
-          alreadyBorrowed={borrowed.some((b) => b.bookId === modal.book.id)}
+          alreadyBorrowed={borrowed.some((b) => String(b.bookId) === String(modal.book.id))}
+          alreadyRequested={pending.some((b) => String(b.bookId) === String(modal.book.id))}
           onClose={closeModal}
           onConfirm={confirmBorrow}
         />
