@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Camera, ChevronLeft, ChevronRight, Heart, LogOut, SquarePen, UserRound } from "lucide-react"
+import { Camera, ChevronLeft, ChevronRight, Heart, KeyRound, LogOut, SquarePen, UserRound } from "lucide-react"
 import Navbar from "../components/Navbar"
 import { useAuth } from "../context/useAuth"
 
@@ -92,6 +92,93 @@ function Field({ label, name, value, error, editing, onChange, type = "text", op
     )
 }
 
+const API = import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"
+
+function PasswordModal({ onClose, onDone }) {
+    const [f, setF] = useState({ cur: "", next: "", conf: "" })
+    const [touched, setTouched] = useState(false)
+    const [error, setError] = useState("")
+    const [saving, setSaving] = useState(false)
+
+    const errors = {
+        cur: !f.cur && "Required",
+        next:
+            f.next.length < 8 ? "At least 8 characters"
+            : !/[A-Za-z]/.test(f.next) || !/[0-9]/.test(f.next) ? "Use letters and numbers"
+            : f.next === f.cur ? "Must differ from current" : "",
+        conf: f.conf !== f.next && "Passwords don't match",
+    }
+
+    const submit = async (e) => {
+        e.preventDefault()
+        setTouched(true)
+        if (Object.values(errors).some(Boolean)) return
+        setSaving(true)
+        setError("")
+        try {
+            const res = await fetch(`${API}/auth/password`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${localStorage.getItem("token")}`,
+                },
+                body: JSON.stringify({ currentPassword: f.cur, newPassword: f.next }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data.error || "Could not change password.")
+            onDone()
+        } catch (err) {
+            setError(err.message === "Failed to fetch" ? "Cannot reach the server." : err.message)
+            setSaving(false)
+        }
+    }
+
+    const rows = [
+        ["cur", "Current password"],
+        ["next", "New password"],
+        ["conf", "Confirm new password"],
+    ]
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <form
+                onSubmit={submit}
+                noValidate
+                role="dialog"
+                aria-modal="true"
+                className="w-full max-w-sm rounded-md bg-white p-6"
+            >
+                <h2 className="text-xl font-bold text-[#4a1a1f]">Change Password</h2>
+                <div className="mt-4 flex flex-col gap-3">
+                    {rows.map(([k, label]) => (
+                        <div key={k}>
+                            <label className="block text-sm font-bold text-[#4a1a1f]">{label}</label>
+                            <input
+                                type="password"
+                                value={f[k]}
+                                onChange={(e) => setF({ ...f, [k]: e.target.value })}
+                                className={`mt-1 h-10 w-full rounded-sm border bg-white px-3 text-sm font-semibold outline-none ${
+                                    touched && errors[k] ? "border-red-700" : "border-[#4a1a1f]"
+                                }`}
+                            />
+                            {touched && errors[k] && <p className="mt-1 text-xs text-red-700">{errors[k]}</p>}
+                        </div>
+                    ))}
+                </div>
+                {error && <p className="mt-3 text-xs font-bold text-red-700">{error}</p>}
+                <div className="mt-5 flex justify-end gap-3">
+                    <button type="button" onClick={onClose} className="rounded-sm px-4 py-2 text-sm font-bold text-[#4a1a1f]/70 hover:underline">
+                        Cancel
+                    </button>
+                    <button type="submit" disabled={saving} className="rounded-sm bg-[#4a1a1f] px-4 py-2 text-sm font-bold text-white hover:bg-[#3a1717] disabled:opacity-60">
+                        {saving ? "Updating..." : "Update"}
+                    </button>
+                </div>
+            </form>
+        </div>
+    )
+}
+
 export default function Profile() {
     const navigate = useNavigate()
     const { user, logout, updateProfile, updateAvatar } = useAuth()
@@ -99,6 +186,8 @@ export default function Profile() {
     const avatar = draftAvatar !== undefined ? draftAvatar : user.avatar
     const fileRef = useRef(null)
     const [showLogout, setShowLogout] = useState(false)
+    const [showPassword, setShowPassword] = useState(false)
+    const [msg, setMsg] = useState("")
     const isLibrarian = user.role === "librarian"
     const roleLabel = user.role.charAt(0).toUpperCase() + user.role.slice(1)
 
@@ -309,6 +398,16 @@ export default function Profile() {
 
                         <div className="mt-4">
                             <Field label="Phone Number" name="phone_number" type="tel" value={values.phone_number} error={errors.phone_number} {...fieldProps} />
+                            {isLibrarian && !editing && (
+                                <button
+                                    type="button"
+                                    onClick={() => { setMsg(""); setShowPassword(true) }}
+                                    className="mt-4 flex w-full items-center justify-center gap-3 rounded-sm border border-[#4a1a1f] bg-white py-2 text-sm font-bold text-[#4a1a1f] hover:bg-[#f3d9c0]"
+                                >
+                                    Change Password <KeyRound size={16} />
+                                </button>
+                            )}
+                            {msg && <p className="mt-2 text-sm font-bold text-[#0c7a43]" role="status">{msg}</p>}
                         </div>
 
                         {editing ? (
@@ -347,6 +446,12 @@ export default function Profile() {
                         )}
                     </form>
                 </div>
+                {showPassword && (
+                    <PasswordModal
+                        onClose={() => setShowPassword(false)}
+                        onDone={() => { setShowPassword(false); setMsg("Password changed.") }}
+                    />
+                )}
                 {showLogout && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
                         <div role="dialog" aria-modal="true" className="w-full max-w-sm rounded-md bg-white p-6">

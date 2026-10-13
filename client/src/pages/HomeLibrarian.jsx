@@ -5,6 +5,12 @@ import Pagination from "../components/Pagination";
 const API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/books`;
 const BORROW_API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/borrowings`;
 const ROWS_PER_PAGE = 5;
+const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5001/api";
+const AUTH_API = `${BASE}/auth`;
+// Keep these in sync with LibraryService
+const LOAN_DAYS = 14;
+const MAX_LOANS = 3;
+const FINE_PER_DAY = 5;
 
 const api = async (path = "", options = {}, base = API) => {
   const res = await fetch(`${base}${path}`, {
@@ -207,7 +213,7 @@ const Badge = ({ status, overdue }) => {
 };
 
 const CATEGORIES = ["Fiction", "Non-Fiction", "Academic", "Restricted"];
-const EMPTY_FORM = { title: "", author: "", publisher: "", category: "", published: "", description: "", image: "" };
+const EMPTY_FORM = { title: "", author: "", publisher: "", category: "", published: "", description: "", image: "", copies: "1" };
 const DESC_MAX = 300;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -256,6 +262,8 @@ const validate = (f) => {
   if (!desc) e.description = "Description is required.";
   else if (desc.length < 10) e.description = "Write at least 10 characters.";
   else if (desc.length > DESC_MAX) e.description = "Keep it under 300 characters.";
+
+  if (!/^\d+$/.test(String(f.copies).trim()) || +f.copies < 1 || +f.copies > 99) e.copies = "Enter a whole number from 1 to 99.";
 
   const img = f.image.trim();
   if (img) {
@@ -324,6 +332,7 @@ function BookFormModal({ book, onClose, onSave }) {
       ? {
           title: book.title, author: book.author, publisher: book.publisher, category: book.category,
           published: book.published, description: book.description || "", image: isData ? "" : book.image || "",
+          copies: String(book.copies ?? 1),
         }
       : EMPTY_FORM
   );
@@ -386,6 +395,7 @@ function BookFormModal({ book, onClose, onSave }) {
         published: form.published,
         description: form.description.trim(),
         image: upload ? upload.data : form.image.trim(),
+        copies: Number(form.copies),
       });
     } catch (err) {
       setSubmitError(err.message);
@@ -438,6 +448,10 @@ function BookFormModal({ book, onClose, onSave }) {
             {...bind("description")}
             className={`${bind("description").className} min-h-[110px] resize-y`}
           />
+        </Field>
+
+        <Field label="Number of Copies" error={err("copies")}>
+          <input type="number" min="1" max="99" placeholder="e.g. 3" {...bind("copies")} />
         </Field>
 
         <Field label="Image Upload" error={fileError || err("image")}>
@@ -516,6 +530,560 @@ function ConfirmDeleteModal({ book, onCancel, onConfirm }) {
   );
 }
 
+// ---------- Helpers ----------
+const normUser = (u) =>
+  u && { ...u, phone: u.phone_number ?? u.phone ?? "", fullName: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() };
+const peso = (n) => `₱${Number(n || 0).toFixed(2)}`;
+const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; };
+const localISO = () => new Date().toISOString().slice(0, 10); // server dates are UTC days
+const isToday = (iso) => !!iso && String(iso).slice(0, 10) === localISO();
+const copiesLeft = (b) => b.copiesAvailable ?? (b.status === "Available" ? 1 : 0);
+const isReturned = (t) => t.status === "Returned";
+const TABS = [["overview", "Overview"], ["books", "Books"], ["borrowers", "Borrowers"]];
+const TONES = { red: "#c0121f", amber: "#eea51c", maroon: "#4a1f1f", green: "#0c7a43" };
+
+const eligibility = (student, book, transactions) => {
+  const mine = transactions.filter((t) => t.borrowerEmail === student.email);
+  const active = mine.filter((t) => !isReturned(t));
+  if (active.some((t) => t.overdue)) return "This student has overdue books.";
+  if (mine.some((t) => t.fine > 0 && !t.finePaid)) return "This student has unpaid fines.";
+  if (active.length >= MAX_LOANS) return `Borrowing limit reached (${MAX_LOANS} books).`;
+  if (book) {
+    if (copiesLeft(book) < 1) return "No copies of this book are left.";
+    if (active.some((t) => t.bookId === book.id)) return "This student already borrowed this book.";
+  }
+  return null;
+};
+
+const buildNotifications = (transactions, books) => {
+  const out = [];
+  const now = Date.now();
+  for (const t of transactions) {
+    if (t.overdue) {
+      out.push({ tone: "red", title: `Overdue: ${t.title}`, sub: `${t.borrower} · ${t.daysOverdue} ${t.daysOverdue === 1 ? "day" : "days"} late` });
+    } else if (!isReturned(t) && t.due && (new Date(t.due + "T00:00:00") - now) / 86400000 < 2) {
+      out.push({ tone: "amber", title: `Due soon: ${t.title}`, sub: `${t.borrower} · due ${fmt(t.due)}` });
+    }
+    if (isReturned(t) && t.fine > 0 && !t.finePaid) {
+      out.push({ tone: "red", title: `Unpaid fine: ${peso(t.fine)}`, sub: `${t.borrower} · ${t.title}` });
+    }
+  }
+  for (const b of books) {
+    if (copiesLeft(b) === 0) out.push({ tone: "maroon", title: `No copies left: ${b.title}`, sub: `All ${b.totalCopies ?? 1} copies are borrowed.` });
+  }
+  return out;
+};
+
+// ---------- CSV import ----------
+const CSV_TEMPLATE = `title,author,publisher,category,published,copies,description,image
+The Hobbit,J.R.R. Tolkien,Allen & Unwin,Fiction,1937-09-21,3,A hobbit goes on an unexpected adventure.,
+A Brief History of Time,Stephen Hawking,Bantam Books,Non-Fiction,1988-04-01,2,An introduction to cosmology for general readers.,https://example.com/cover.jpg
+`;
+const REQUIRED_COLS = ["title", "author", "publisher", "category", "published", "description"];
+const MAX_IMPORT_ROWS = 500;
+
+const parseCsv = (input) => {
+  const rows = [];
+  let row = [], cell = "", q = false;
+  const endRow = () => { row.push(cell); cell = ""; if (row.some((c) => c.trim())) rows.push(row); row = []; };
+  for (let i = 0; i < input.length; i++) {
+    const c = input[i];
+    if (q) {
+      if (c === '"') { if (input[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && input[i + 1] === "\n") i++; endRow(); }
+    else cell += c;
+  }
+  endRow();
+  return rows;
+};
+
+const readImport = (text, existing) => {
+  const table = parseCsv(text.replace(/^\uFEFF/, ""));
+  if (table.length < 2) return { rows: [], error: "The file needs a header row and at least one book." };
+  const head = {};
+  table[0].forEach((h, i) => {
+    let k = h.trim().toLowerCase().replace(/ /g, "");
+    if (k === "totalcopies" || k === "numberofcopies") k = "copies";
+    if (k === "imageurl" || k === "imagelink") k = "image";
+    if (k === "datepublished") k = "published";
+    head[k] = i;
+  });
+  const missing = REQUIRED_COLS.filter((k) => !(k in head));
+  if (missing.length) return { rows: [], error: `Missing column(s): ${missing.join(", ")}.` };
+
+  const cell = (r, k) => (head[k] === undefined ? "" : (r[head[k]] ?? "").trim());
+  const keyOf = (t, a) => `${t.toLowerCase()}|${a.toLowerCase()}`;
+  const seen = new Set(existing.map((b) => keyOf(b.title, b.author)));
+
+  const rows = table.slice(1, MAX_IMPORT_ROWS + 1).map((r, i) => {
+    const cat = CATEGORIES.find((c) => c.toLowerCase() === cell(r, "category").toLowerCase());
+    const form = {
+      title: cell(r, "title"), author: cell(r, "author"), publisher: cell(r, "publisher"),
+      category: cat || "", published: cell(r, "published"), description: cell(r, "description"),
+      image: cell(r, "image"), copies: cell(r, "copies") || "1",
+    };
+    const e = validate(form);
+    if (!cat) e.category = `Category must be one of: ${CATEGORIES.join(", ")}.`;
+    if (form.published && !/^\d{4}-\d{2}-\d{2}$/.test(form.published)) e.published = "Use the date format YYYY-MM-DD.";
+    const errors = Object.values(e);
+    if (!errors.length) {
+      const k = keyOf(form.title, form.author);
+      if (seen.has(k)) errors.push("Duplicate: this title and author already exist.");
+      else seen.add(k);
+    }
+    return { line: i + 2, label: form.title || "(no title)", form, errors };
+  });
+  return { rows, error: table.length - 1 > MAX_IMPORT_ROWS ? `Only the first ${MAX_IMPORT_ROWS} rows were read.` : "" };
+};
+
+function ImportModal({ books, onClose, onDone }) {
+  const [fileName, setFileName] = useState("");
+  const [fileError, setFileError] = useState("");
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+  const good = rows.filter((r) => !r.errors.length);
+  const bad = rows.filter((r) => r.errors.length);
+
+  const pick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setFileName(file.name);
+    const res = readImport(await file.text(), books);
+    setRows(res.rows);
+    setFileError(res.error);
+  };
+  const template = () => {
+    const url = URL.createObjectURL(new Blob(["\uFEFF" + CSV_TEMPLATE], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = "books_import_template.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+  const run = async () => {
+    setBusy(true);
+    let n = 0;
+    for (const r of good) {
+      const { copies, ...rest } = r.form;
+      try { await api("", { method: "POST", body: JSON.stringify({ ...rest, copies: Number(copies) }) }); n++; } catch { /* skipped */ }
+    }
+    const skipped = rows.length - n;
+    onDone(`Imported ${n} ${n === 1 ? "book" : "books"}${skipped > 0 ? ` (${skipped} skipped)` : ""}.`);
+  };
+
+  return (
+    <Modal title="Bulk Import" titleId="import-title" onClose={onClose}>
+      <div className="flex flex-col gap-3.5 px-6 pt-[22px] pb-[26px] text-[13px]">
+        <p><strong>1.</strong> Download the template (.csv) and open it in Excel or Google Sheets.</p>
+        <button type="button" className={btnSecondary} onClick={template}>Download template (.csv)</button>
+        <p>
+          <strong>2.</strong> One book per row. Keep the header row. Categories: {CATEGORIES.join(", ")}. Date format: YYYY-MM-DD.
+          Max {MAX_IMPORT_ROWS} rows. Books already in the catalog (same title and author) are skipped.
+        </p>
+        <p><strong>3.</strong> Upload your file.</p>
+        <button type="button" className={`${btnSecondary} py-5`} onClick={() => fileRef.current?.click()}>
+          {fileName || "Choose a .csv file"}
+        </button>
+        <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={pick} />
+        {fileError && <p className="font-semibold text-[#c0121f]" role="alert">{fileError}</p>}
+
+        {rows.length > 0 && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-[#0c7a43]/40 bg-[#0c7a43]/10 p-3"><strong className="block text-2xl text-[#0c7a43]">{good.length}</strong>Ready to import</div>
+              <div className="rounded-xl border border-[#c0121f]/40 bg-[#c0121f]/10 p-3"><strong className="block text-2xl text-[#c0121f]">{bad.length}</strong>Will be skipped</div>
+            </div>
+            {bad.length > 0 && (
+              <div className="max-h-48 overflow-y-auto rounded-lg border border-[#c0121f]/40 bg-[#c0121f]/5 p-3">
+                <p className="mb-2 font-bold text-[#c0121f]">Fix these rows and upload again:</p>
+                {bad.slice(0, 20).map((r) => (
+                  <div key={r.line} className="mb-2">
+                    <div className="font-bold">Row {r.line} · {r.label}</div>
+                    <div className="text-xs">{r.errors.join(" ")}</div>
+                  </div>
+                ))}
+                {bad.length > 20 && <p className="text-xs text-gray-500">...and {bad.length - 20} more.</p>}
+              </div>
+            )}
+            <button type="button" className={btnPrimary} disabled={!good.length || busy} onClick={run}>
+              {busy ? "Importing..." : good.length ? `Import ${good.length} ${good.length === 1 ? "book" : "books"}` : "Nothing to import"}
+            </button>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ---------- Issue book ----------
+function IssueModal({ students, books, transactions, initial, onClose, onIssue }) {
+  const [email, setEmail] = useState(initial?.student?.email || "");
+  const [bookId, setBookId] = useState(initial?.book?.id != null ? String(initial.book.id) : "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const student = students.find((s) => s.email === email);
+  const book = books.find((b) => String(b.id) === bookId);
+  const problem = student && book ? eligibility(student, book, transactions) : null;
+  const ready = student && book && !problem;
+  const due = new Date(Date.now() + LOAN_DAYS * 86400000).toISOString().slice(0, 10);
+  const activeCount = student ? transactions.filter((t) => t.borrowerEmail === student.email && !isReturned(t)).length : 0;
+
+  const confirm = async () => {
+    setBusy(true);
+    setError("");
+    try { await onIssue(book, student); } catch (e) { setError(e.message); setBusy(false); }
+  };
+
+  return (
+    <Modal title="Issue Book" titleId="issue-title" onClose={onClose}>
+      <div className="flex flex-col gap-3.5 px-6 pt-[22px] pb-[26px]">
+        <Field label="Student">
+          <select className={`${inputBase} border-[#2b2b2b]`} value={email} onChange={(e) => setEmail(e.target.value)}>
+            <option value="" disabled>Choose a student</option>
+            {students.map((s) => <option key={s.email} value={s.email}>{s.fullName} · {s.email}</option>)}
+          </select>
+        </Field>
+        <Field label="Book">
+          <select className={`${inputBase} border-[#2b2b2b]`} value={bookId} onChange={(e) => setBookId(e.target.value)}>
+            <option value="" disabled>Choose a book</option>
+            {books.map((b) => <option key={b.id} value={b.id}>{b.title} ({copiesLeft(b)} left)</option>)}
+          </select>
+        </Field>
+        {student && <p className="text-[13px] font-semibold">Borrowing limit: {activeCount}/{MAX_LOANS} books</p>}
+        {problem && <p className="text-[13px] font-semibold text-[#c0121f]">{problem}</p>}
+        {ready && (
+          <p className="text-[13px] font-semibold text-[#0c7a43]">
+            Eligible. Due date will be {fmt(due)} ({LOAN_DAYS} days). Late fine: ₱{FINE_PER_DAY}/day.
+          </p>
+        )}
+        {error && <p className="text-[12.5px] font-semibold text-[#c0121f]" role="alert">{error}</p>}
+        <button type="button" className={btnPrimary} disabled={!ready || busy} onClick={confirm}>
+          {busy ? "Issuing..." : "Confirm borrow"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------- Transaction row actions ----------
+const TxActions = ({ t, onReturn, onPayFine }) => (
+  <span className="inline-flex gap-2">
+    {!isReturned(t) && <button className={`${btnSmall} py-1.5`} onClick={() => onReturn(t)}>Mark returned</button>}
+    {isReturned(t) && t.fine > 0 && !t.finePaid && <button className={`${btnSmall} py-1.5`} onClick={() => onPayFine(t)}>Mark fine paid</button>}
+  </span>
+);
+
+// ---------- Student detail ----------
+function StudentModal({ student, transactions, onClose, onIssue, onReturn, onPayFine }) {
+  const [page, setPage] = useState(1);
+  const records = transactions.filter((t) => t.borrowerEmail === student.email);
+  const active = records.filter((t) => !isReturned(t));
+  const problem = eligibility(student, null, transactions);
+  const fines = records.filter((t) => t.fine > 0 && !t.finePaid).reduce((s, t) => s + t.fine, 0);
+  const size = 3;
+  const pages = Math.max(1, Math.ceil(records.length / size));
+  const cur = Math.min(page, pages);
+  const shown = records.slice((cur - 1) * size, cur * size);
+
+  return (
+    <Modal title={student.fullName} titleId="student-title" onClose={onClose}>
+      <div className="flex flex-col gap-3 px-6 pt-[22px] pb-[26px] text-[13px]">
+        <p className="text-gray-500">{student.email} · {student.phone}</p>
+        <div className={`rounded-lg p-3 font-semibold ${problem ? "bg-[#c0121f]/10 text-[#c0121f]" : "bg-[#0c7a43]/10 text-[#0c7a43]"}`}>
+          {problem || "Eligible to borrow"}
+        </div>
+        <p className="font-semibold">Borrowing limit: {active.length}/{MAX_LOANS} books</p>
+        {fines > 0 && <p className="font-bold text-[#c0121f]">Outstanding fines: {peso(fines)}</p>}
+        <button type="button" className={btnPrimary} onClick={() => onIssue(student)}>+ Issue a book</button>
+
+        <h3 className="mt-2 text-base font-bold">Borrowing records</h3>
+        {records.length === 0 ? (
+          <p className="text-gray-500">No borrowing records yet.</p>
+        ) : (
+          <>
+            {shown.map((t) => (
+              <div key={t.id} className={`rounded-xl border p-3 ${t.overdue ? "border-[#c0121f]/60" : "border-[#2b2b2b]/30"}`}>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <strong>{t.title}</strong>
+                  <Badge status={t.status} overdue={t.overdue} />
+                </div>
+                <div className="text-xs text-gray-500">Borrowed {fmt(t.borrowedOn)} · Due {fmt(t.due)}</div>
+                {isReturned(t) && <div className="text-xs text-gray-500">Returned {fmt(t.returned)}</div>}
+                {t.fine > 0 && (
+                  <div className={`text-[13px] font-bold ${t.finePaid ? "text-[#0c7a43]" : "text-[#c0121f]"}`}>
+                    Fine: {peso(t.fine)} ({t.daysOverdue} {t.daysOverdue === 1 ? "day" : "days"} late){t.finePaid ? " · PAID" : ""}
+                  </div>
+                )}
+                <div className="mt-2 text-right"><TxActions t={t} onReturn={onReturn} onPayFine={onPayFine} /></div>
+              </div>
+            ))}
+            <Pagination page={cur} totalPages={pages} onChange={setPage} />
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ---------- Notifications ----------
+function NotificationsModal({ notes, onClose }) {
+  const [page, setPage] = useState(1);
+  const size = 6;
+  const pages = Math.max(1, Math.ceil(notes.length / size));
+  const cur = Math.min(page, pages);
+  return (
+    <Modal title="Notifications" titleId="notes-title" onClose={onClose}>
+      <div className="flex flex-col gap-3 px-6 pt-[22px] pb-[26px] text-[13px]">
+        <p className="text-gray-500">
+          {notes.length === 0 ? "Nothing needs your attention." : `${notes.length} ${notes.length === 1 ? "notification" : "notifications"}`}
+        </p>
+        {notes.length === 0 && <p className="rounded-xl bg-[#faf6f0] p-4 font-semibold text-[#0c7a43]">You're all caught up.</p>}
+        {notes.slice((cur - 1) * size, cur * size).map((n, i) => (
+          <div key={i} className="flex items-start gap-3 rounded-xl border border-[#2b2b2b]/20 p-3">
+            <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ background: TONES[n.tone] }} />
+            <div><div className="font-bold">{n.title}</div><div className="text-gray-600">{n.sub}</div></div>
+          </div>
+        ))}
+        {notes.length > size && <Pagination page={cur} totalPages={pages} onChange={setPage} />}
+      </div>
+    </Modal>
+  );
+}
+
+// ---------- Overview ----------
+function Overview({ books, transactions, students, onAction, onStat }) {
+  const outstanding = transactions.filter((t) => t.fine > 0 && !t.finePaid).reduce((s, t) => s + t.fine, 0);
+  const stats = [
+    ["Total Books", books.length, "bg-[#e4f1ee]"],
+    ["Borrowed", transactions.filter((t) => !isReturned(t)).length, "bg-[#dedaf4]"],
+    ["Overdue", transactions.filter((t) => t.overdue).length, "bg-[#ffadad]"],
+    ["Available", books.reduce((s, b) => s + copiesLeft(b), 0), "bg-[#ffd6a5]"],
+    ["Students", students.length, "bg-[#d7ecff]"],
+    ["Fines Due", `₱${outstanding.toFixed(0)}`, "bg-[#f6d6e8]"],
+  ];
+  const borrowedToday = transactions.filter((t) => isToday(t.borrowedOn)).length;
+  const returnedToday = transactions.filter((t) => isReturned(t) && isToday(t.returned)).length;
+  const recent = transactions.slice(0, 5);
+  const actions = [["issue", "Issue"], ["add", "Add Book"], ["import", "Import"], ["students", "Students"]];
+  const h = "mb-3 border-b border-[#eea51c]/60 pb-1 text-xl font-bold text-[#4a1f1f]";
+
+  return (
+    <>
+      <p className="mb-3 text-sm italic text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
+      <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+        {actions.map(([k, label]) => (
+          <button key={k} onClick={() => onAction(k)} className="cursor-pointer rounded-xl border border-[#eea51c] bg-[#4a1f1f] py-3 text-sm font-semibold text-white hover:opacity-90">{label}</button>
+        ))}
+      </div>
+
+      <h2 className={h}>Library at a Glance</h2>
+      <section className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
+        {stats.map(([label, value, bg]) => (
+          <button key={label} onClick={() => onStat(label)} className={`flex cursor-pointer flex-col gap-1.5 rounded-xl border-0 px-[18px] py-3.5 text-left hover:opacity-90 ${bg}`}>
+            <span className="text-[13px] font-semibold">{label}</span>
+            <strong className="text-[30px] font-bold">{value}</strong>
+          </button>
+        ))}
+      </section>
+
+      <h2 className={h}>Today's Summary</h2>
+      <div className="mb-8 grid grid-cols-2 gap-4">
+        <div className="rounded-xl border border-[#4a1f1f]/40 bg-[#4a1f1f]/10 p-4"><strong className="block text-2xl text-[#4a1f1f]">{borrowedToday}</strong><span className="text-xs font-semibold">Borrowed today</span></div>
+        <div className="rounded-xl border border-[#0c7a43]/40 bg-[#0c7a43]/10 p-4"><strong className="block text-2xl text-[#0c7a43]">{returnedToday}</strong><span className="text-xs font-semibold">Returned today</span></div>
+      </div>
+
+      <h2 className={h}>Recent Activity</h2>
+      {recent.length === 0 ? (
+        <p className="rounded-xl bg-[#faf6f0] p-4 text-sm font-semibold">No loans recorded yet.</p>
+      ) : (
+        <div className="rounded-xl border border-[#4a1f1f]/20">
+          {recent.map((t) => (
+            <div key={t.id} className="flex items-center gap-3 border-b border-[#4a1f1f]/10 px-4 py-3 last:border-b-0">
+              <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: t.overdue ? TONES.red : isReturned(t) ? TONES.green : TONES.amber }} />
+              <div className="min-w-0">
+                <div className="truncate text-sm font-bold">{t.title}</div>
+                <div className="truncate text-xs text-gray-600">{t.borrower} · {isReturned(t) ? `Returned ${fmt(t.returned)}` : `Borrowed ${fmt(t.borrowedOn)}`}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---------- Profile ----------
+function EditProfileModal({ profile, onClose, onSaved }) {
+  const [f, setF] = useState({ firstName: profile.firstName || "", lastName: profile.lastName || "", phone: profile.phone || "" });
+  const [touched, setTouched] = useState(false);
+  const [error, setError] = useState("");
+  const phone = f.phone.replace(/[\s-]/g, "");
+  const errors = {
+    firstName: !f.firstName.trim() && "Required",
+    lastName: !f.lastName.trim() && "Required",
+    phone: phone && !/^\+?\d{7,15}$/.test(phone) && "Enter a valid phone number.",
+  };
+  const submit = async (e) => {
+    e.preventDefault();
+    setTouched(true);
+    if (Object.values(errors).some(Boolean)) return;
+    try {
+      await api("/me", { method: "PUT", body: JSON.stringify({ firstName: f.firstName.trim(), lastName: f.lastName.trim(), phone }) }, AUTH_API);
+      onSaved({ ...profile, firstName: f.firstName.trim(), lastName: f.lastName.trim(), fullName: `${f.firstName.trim()} ${f.lastName.trim()}`, phone });
+    } catch (err) { setError(err.message); }
+  };
+  const bind = (k) => ({
+    value: f[k],
+    onChange: (e) => setF({ ...f, [k]: e.target.value }),
+    className: `${inputBase} ${touched && errors[k] ? "border-[#c0121f]" : "border-[#2b2b2b]"}`,
+  });
+  return (
+    <Modal title="Edit Profile" titleId="edit-profile-title" onClose={onClose} small>
+      <form onSubmit={submit} noValidate className="flex flex-col gap-3.5 px-6 pt-[22px] pb-[26px]">
+        <Field label="First name" error={touched && errors.firstName}><input type="text" {...bind("firstName")} /></Field>
+        <Field label="Last name" error={touched && errors.lastName}><input type="text" {...bind("lastName")} /></Field>
+        <Field label="Phone" error={touched && errors.phone}><input type="tel" {...bind("phone")} /></Field>
+        {error && <p className="text-[12.5px] font-semibold text-[#c0121f]" role="alert">{error}</p>}
+        <div className="grid grid-cols-2 gap-6">
+          <button type="submit" className={btnPrimary}>Save</button>
+          <button type="button" className={btnSecondary} onClick={onClose}>Cancel</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function PasswordModal({ onClose, onDone }) {
+  const [f, setF] = useState({ cur: "", next: "", conf: "" });
+  const [touched, setTouched] = useState(false);
+  const [error, setError] = useState("");
+  const errors = {
+    cur: !f.cur && "Required",
+    next: f.next.length < 8 ? "At least 8 characters"
+      : !/[A-Za-z]/.test(f.next) || !/[0-9]/.test(f.next) ? "Use letters and numbers"
+      : f.next === f.cur ? "Must differ from current" : false,
+    conf: f.conf !== f.next && "Passwords don't match",
+  };
+  const submit = async (e) => {
+    e.preventDefault();
+    setTouched(true);
+    if (Object.values(errors).some(Boolean)) return;
+    try {
+      await api("/password", { method: "PUT", body: JSON.stringify({ currentPassword: f.cur, newPassword: f.next }) }, AUTH_API);
+      onDone();
+    } catch (err) { setError(err.message); }
+  };
+  const bind = (k) => ({
+    type: "password",
+    value: f[k],
+    onChange: (e) => setF({ ...f, [k]: e.target.value }),
+    className: `${inputBase} ${touched && errors[k] ? "border-[#c0121f]" : "border-[#2b2b2b]"}`,
+  });
+  return (
+    <Modal title="Change Password" titleId="password-title" onClose={onClose} small>
+      <form onSubmit={submit} noValidate className="flex flex-col gap-3.5 px-6 pt-[22px] pb-[26px]">
+        <Field label="Current password" error={touched && errors.cur}><input {...bind("cur")} /></Field>
+        <Field label="New password" error={touched && errors.next}><input {...bind("next")} /></Field>
+        <Field label="Confirm new password" error={touched && errors.conf}><input {...bind("conf")} /></Field>
+        {error && <p className="text-[12.5px] font-semibold text-[#c0121f]" role="alert">{error}</p>}
+        <div className="grid grid-cols-2 gap-6">
+          <button type="submit" className={btnPrimary}>Update</button>
+          <button type="button" className={btnSecondary} onClick={onClose}>Cancel</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ProfileTab({ profile: u, onChange, notify }) {
+  const [modal, setModal] = useState(null);
+  const fileRef = useRef(null);
+  if (!u) return <p className="text-gray-500">Loading profile...</p>;
+
+  const setAvatar = async (avatar) => {
+    try {
+      await api("/me", { method: "PUT", body: JSON.stringify({ avatar }) }, AUTH_API);
+      onChange({ ...u, avatar });
+      notify(avatar ? "Profile picture updated." : "Profile picture removed.");
+    } catch (e) { notify(e.message); }
+  };
+  const pick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return notify("Choose an image file.");
+    try { await setAvatar(await resizeImage(file, 400)); } catch (err) { notify(err.message); }
+  };
+  const logout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("session");
+    window.location.href = "/login";
+  };
+  const fullName = u.fullName || `${u.firstName || ""} ${u.lastName || ""}`.trim();
+  const rows = [
+    ["Full name", fullName],
+    ["Employee ID", u.idNumber || u.employeeId || "-"],
+    ["Faculty email", u.email],
+    ["Phone number", u.phone],
+    ["Assigned role", u.assignedRole || "Librarian"],
+  ];
+
+  return (
+    <div className="mx-auto max-w-[480px]">
+      <div className="mb-6 flex flex-col items-center gap-2">
+        <button type="button" onClick={() => fileRef.current?.click()} aria-label="Change profile photo" className="cursor-pointer rounded-full border-0 bg-[#4a1f1f] p-1">
+          {u.avatar ? (
+            <img src={u.avatar} alt="" className="h-[104px] w-[104px] rounded-full object-cover" />
+          ) : (
+            <span className="flex h-[104px] w-[104px] items-center justify-center rounded-full bg-[#faf6f0] text-[44px] font-bold text-[#4a1f1f]">
+              {(u.firstName || fullName || "?").charAt(0).toUpperCase()}
+            </span>
+          )}
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" hidden onChange={pick} />
+        <div className="flex gap-3 text-xs">
+          <button className="cursor-pointer border-0 bg-transparent font-semibold text-[#0b4a8b]" onClick={() => fileRef.current?.click()}>Change photo</button>
+          {u.avatar && <button className="cursor-pointer border-0 bg-transparent font-semibold text-[#c0121f]" onClick={() => setAvatar(null)}>Remove photo</button>}
+        </div>
+        <h2 className="text-2xl font-bold text-[#4a1f1f]">{fullName}</h2>
+        <span className="rounded-full bg-[#4a1f1f]/10 px-3.5 py-1 text-sm font-semibold text-[#4a1f1f]">Librarian</span>
+      </div>
+
+      <div className="mb-6 rounded-xl border border-[#4a1f1f]/20">
+        {rows.map(([label, value]) => (
+          <div key={label} className="border-b border-[#4a1f1f]/10 px-4 py-3 last:border-b-0">
+            <div className="text-xs text-gray-500">{label}</div>
+            <div className="text-[15px] font-semibold">{value || "-"}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mb-3 grid grid-cols-2 gap-3">
+        <button className={btnPrimary} onClick={() => setModal("edit")}>Edit profile</button>
+        <button className={btnSecondary} onClick={() => setModal("password")}>Password</button>
+      </div>
+      <button className="w-full cursor-pointer rounded-sm border border-[#e00000] bg-white px-3 py-[11px] text-[13px] font-bold text-[#e00000] hover:bg-red-50" onClick={() => setModal("logout")}>Log out</button>
+
+      {modal === "edit" && <EditProfileModal profile={u} onClose={() => setModal(null)} onSaved={(p) => { onChange(p); setModal(null); notify("Profile updated."); }} />}
+      {modal === "password" && <PasswordModal onClose={() => setModal(null)} onDone={() => { setModal(null); notify("Password changed."); }} />}
+      {modal === "logout" && (
+        <Modal title="Log out?" titleId="logout-title" small onClose={() => setModal(null)}>
+          <div className="px-6 pt-[22px] pb-[26px]">
+            <p className="mb-[18px] text-sm">Are you sure you want to log out?</p>
+            <div className="grid grid-cols-2 gap-6">
+              <button className={btnDanger} onClick={logout}>Log out</button>
+              <button className={btnSecondary} onClick={() => setModal(null)}>Cancel</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 export default function HomeLibrarian() {
   const [books, setBooks] = useState([]);
   const [apiError, setApiError] = useState("");
@@ -525,49 +1093,117 @@ export default function HomeLibrarian() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
   const [transactions, setTransactions] = useState([]);
+  const [tab, setTab] = useState("overview");
+  const [borrowerView, setBorrowerView] = useState("lookup");
+  const [students, setStudents] = useState([]);
+  const [studentQuery, setStudentQuery] = useState("");
+  const [studentPage, setStudentPage] = useState(1);
+  const [issueCtx, setIssueCtx] = useState(null);
+  const [studentEmail, setStudentEmail] = useState(null);
+  const [showImport, setShowImport] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const [toast, setToast] = useState("");
+  const [bookSort, setBookSort] = useState({ key: "title", dir: "asc" });
+
+  const notify = (m) => {
+    setToast(m);
+    setTimeout(() => setToast(""), 3500);
+  };
+
+  const reload = () => {
+    Promise.all([api(), api("", {}, BORROW_API).catch(() => [])])
+      .then(([bookData, txData]) => {
+        const txs = Array.isArray(txData) ? txData : [];
+        const out = {};
+        txs.forEach((t) => { if (t.status !== "Returned") out[t.bookId] = (out[t.bookId] || 0) + 1; });
+        setTransactions(txs);
+        setBooks(
+          (Array.isArray(bookData) ? bookData : []).map((b) => {
+            const total = b.copies ?? 1;
+            return { ...b, totalCopies: total, copiesAvailable: Math.max(0, total - (out[b.id] || 0)) };
+          })
+        );
+      })
+      .catch((e) => setApiError(e.message));
+    api("/borrowers", {}, BORROW_API)
+      .then((data) =>
+        setStudents(
+          (Array.isArray(data) ? data : []).map((s) => ({
+            ...s,
+            fullName: `${s.firstName} ${s.lastName}`.trim() || s.email,
+            phone: s.phone_number || "",
+          }))
+        )
+      )
+      .catch(() => {});
+  };
 
   useEffect(() => {
-    const load = () => {
-      api()
-        .then((data) => setBooks(Array.isArray(data) ? data : []))
-        .catch((e) => setApiError(e.message));
-      api("", {}, BORROW_API)
-        .then((data) => setTransactions(Array.isArray(data) ? data : []))
-        .catch((e) => setApiError(e.message));
-    };
-    load();
-    window.addEventListener("focus", load);
-    return () => window.removeEventListener("focus", load);
+    reload();
+    api("/me", {}, AUTH_API).then((d) => setProfile(normUser(d.user))).catch(() => {});
+    window.addEventListener("focus", reload);
+    return () => window.removeEventListener("focus", reload);
   }, []);
 
   const q = query.trim().toLowerCase();
   const filteredBooks = books.filter(
     (b) => !q || b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q)
   );
-  const availableCount = books.filter((b) => b.status === "Available").length;
-  const borrowedCount = transactions.filter((t) => t.status === "Not Returned").length;
-  const overdueCount = transactions.filter((t) => t.overdue).length;
-  const liveStats = [
-    { label: "Total Books", value: books.length, bg: "bg-[#e4f1ee]" },
-    { label: "Borrowed", value: borrowedCount, bg: "bg-[#dedaf4]" },
-    { label: "Overdue", value: overdueCount, bg: "bg-[#ffadad]" },
-    { label: "Available", value: availableCount, bg: "bg-[#ffd6a5]" },
-  ];
+
+  const activeFor = (id) => transactions.filter((t) => t.bookId === id && !isReturned(t)).length;
+  const isDup = (f, ignoreId) =>
+    books.some((b) => b.id !== ignoreId && b.title.toLowerCase() === f.title.toLowerCase() && b.author.toLowerCase() === f.author.toLowerCase());
 
   const addBook = async (f) => {
-    const created = await api("", { method: "POST", body: JSON.stringify(f) });
-    setBooks((prev) => [...prev, created]);
+    if (isDup(f)) throw new Error("A book with this title and author already exists.");
+    await api("", { method: "POST", body: JSON.stringify(f) });
+    reload();
     setApiError("");
     setShowModal(false);
+    notify("Book added.");
   };
 
   const saveEdit = async (f) => {
     const id = toEdit?.id;
     if (!id) return;
-    const updated = await api(`/${id}`, { method: "PUT", body: JSON.stringify(f) });
-    setBooks((prev) => prev.map((b) => (b.id === id ? updated : b)));
+    if (isDup(f, id)) throw new Error("A book with this title and author already exists.");
+    const borrowed = activeFor(id);
+    if (f.copies < borrowed) throw new Error(`${borrowed} copies are currently borrowed. Total copies can't be lower than that.`);
+    await api(`/${id}`, { method: "PUT", body: JSON.stringify(f) });
+    reload();
     setApiError("");
     setToEdit(null);
+    notify("Book updated.");
+  };
+
+  const requestDelete = (b) => {
+    if (activeFor(b.id) > 0) return notify("This book is currently borrowed and can't be deleted.");
+    setToDelete(b);
+  };
+
+  const issueBook = async (book, student) => {
+    await api("", { method: "POST", body: JSON.stringify({ bookId: book.id, email: student.email }) }, BORROW_API);
+    const due = new Date(Date.now() + LOAN_DAYS * 86400000).toISOString().slice(0, 10);
+    setIssueCtx(null);
+    reload();
+    notify(`Issued "${book.title}" to ${student.fullName}. Due ${fmt(due)}.`);
+  };
+
+  const returnTx = async (t) => {
+    try {
+      await api(`/${t.id}/return`, { method: "PUT" }, BORROW_API);
+      reload();
+      notify(t.fine > 0 ? `Returned "${t.title}". Fine due: ${peso(t.fine)}.` : `Returned "${t.title}".`);
+    } catch (e) { notify(e.message); }
+  };
+
+  const payFine = async (t) => {
+    try {
+      await api(`/${t.id}/pay`, { method: "PUT" }, BORROW_API);
+      reload();
+      notify(`Fine of ${peso(t.fine)} marked as paid.`);
+    } catch (e) { notify(e.message); }
   };
 
   const deleteBook = async () => {
@@ -577,13 +1213,20 @@ export default function HomeLibrarian() {
       await api(`/${id}`, { method: "DELETE" });
       setBooks((prev) => prev.filter((b) => b.id !== id));
       setApiError("");
+      notify("Book deleted.");
     } catch (e) {
       setApiError(e.message);
     }
     setToDelete(null);
   };
 
-  const filteredTx = transactions.filter((t) => statusFilter === "All Statuses" || t.status === statusFilter);
+  const filteredTx = transactions.filter(
+    (t) => statusFilter === "All Statuses" || (statusFilter === "Overdue" ? t.overdue : t.status === statusFilter)
+  );
+  const txCount = (f) =>
+    f === "All Statuses" ? transactions.length
+    : f === "Overdue" ? transactions.filter((t) => t.overdue).length
+    : transactions.filter((t) => t.status === f).length;
 
   const bookCols = [
     { key: "cover", label: "", render: (r) => <Cover colors={r.cover} image={r.image} /> },
@@ -608,7 +1251,7 @@ export default function HomeLibrarian() {
           <button
             aria-label={`Delete ${r.title}`}
             className="inline-flex cursor-pointer border-0 bg-transparent p-0.5 text-[#c0121f] hover:opacity-70"
-            onClick={() => setToDelete(r)}
+            onClick={() => requestDelete(r)}
           >
             <TrashIcon />
           </button>
@@ -625,22 +1268,80 @@ export default function HomeLibrarian() {
     { key: "due", label: "Due", sortable: true, render: (r) => fmt(r.due) },
     { key: "returned", label: "Return Date", sortable: true, render: (r) => fmt(r.returned) },
     { key: "status", label: "Status", sortable: true, render: (r) => <Badge status={r.status} overdue={r.overdue} /> },
+    {
+      key: "fine",
+      label: "Fine",
+      sortable: true,
+      render: (r) => (r.fine > 0 ? `${peso(r.fine)} (${r.daysOverdue}d late)${r.finePaid ? " · PAID" : ""}` : "-"),
+    },
+    { key: "actions", label: "Actions", render: (r) => <TxActions t={r} onReturn={returnTx} onPayFine={payFine} /> },
   ];
+
+  const notes = buildNotifications(transactions, books);
+  const overdueTotal = transactions.filter((t) => t.overdue).length;
+
+  const sq = studentQuery.trim().toLowerCase();
+  const foundStudents = students.filter(
+    (s) => !sq || s.fullName.toLowerCase().includes(sq) || s.email.toLowerCase().includes(sq) || (s.phone || "").includes(sq)
+  );
+  const sPages = Math.max(1, Math.ceil(foundStudents.length / ROWS_PER_PAGE));
+  const sCur = Math.min(studentPage, sPages);
+  const shownStudents = foundStudents.slice((sCur - 1) * ROWS_PER_PAGE, sCur * ROWS_PER_PAGE);
+  const openStudent = students.find((s) => s.email === studentEmail);
+
+  const goStat = (label) => {
+    if (label === "Total Books") setTab("books");
+    else if (label === "Available") { setBookSort({ key: "status", dir: "asc" }); setTab("books"); }
+    else if (label === "Students") { setTab("borrowers"); setBorrowerView("lookup"); }
+    else {
+      setTab("borrowers");
+      setBorrowerView("transactions");
+      setStatusFilter(label === "Borrowed" ? "Not Returned" : label === "Overdue" ? "Overdue" : "All Statuses");
+    }
+  };
+
+  const onAction = (k) => {
+    if (k === "issue") setIssueCtx({});
+    else if (k === "add") setShowModal(true);
+    else if (k === "import") setShowImport(true);
+    else { setTab("borrowers"); setBorrowerView("lookup"); }
+  };
+
+  const chip = (active, danger) =>
+    `cursor-pointer rounded-full border px-3.5 py-1.5 text-[13px] font-semibold ${
+      active ? (danger ? "border-[#c0121f] bg-[#c0121f] text-white" : "border-[#4a1f1f] bg-[#4a1f1f] text-white")
+             : (danger ? "border-[#c0121f] bg-white text-[#c0121f]" : "border-[#4a1f1f] bg-white text-[#4a1f1f]")}`;
 
   return (
     <div className="min-h-screen bg-white font-sans text-[#1b1b1b]">
-      <Navbar role="librarian" />
+      <Navbar role="librarian" notificationCount={notes.length} onNotifications={() => setShowNotes(true)} />
 
       <main className="mx-auto max-w-[1100px] p-6">
-        <div className="mb-5 flex items-center justify-between">
-          <h1 className="text-[26px] font-bold md:text-[34px]">Librarian Dashboard</h1>
-          <button
-            className="cursor-pointer rounded-md border-0 bg-[#0b4a8b] px-[18px] py-2.5 font-semibold text-white hover:bg-[#083a6f]"
-            onClick={() => setShowModal(true)}
-          >
-            + Add Book
-          </button>
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-[26px] font-bold md:text-[34px]">
+              {greeting()}, {profile?.firstName?.trim() || "Librarian"}
+            </h1>
+            <p className="text-sm italic text-gray-500">Keeper of the Hogwarts Library</p>
+          </div>
         </div>
+
+        <nav className="mb-6 flex gap-1 border-b border-[#d8d8d8]" aria-label="Sections">
+          {TABS.map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => { if (k === "books") setBookSort({ key: "title", dir: "asc" }); setTab(k); }}
+              className={`cursor-pointer border-0 border-b-2 bg-transparent px-4 py-2.5 text-sm font-semibold ${
+                tab === k ? "border-[#4a1f1f] text-[#4a1f1f]" : "border-transparent text-gray-500 hover:text-[#4a1f1f]"
+              }`}
+            >
+              {label}
+              {k === "borrowers" && overdueTotal > 0 && (
+                <span className="ml-1.5 rounded-full bg-[#c0121f] px-1.5 text-[11px] font-bold text-white">{overdueTotal}</span>
+              )}
+            </button>
+          ))}
+        </nav>
 
         {apiError && (
           <p className="mb-4 rounded-md bg-[#ffe5e5] px-3 py-2 text-[13px] font-semibold text-[#c0121f]" role="alert">
@@ -648,57 +1349,162 @@ export default function HomeLibrarian() {
           </p>
         )}
 
-        <section className="mb-8 grid grid-cols-2 gap-5 md:grid-cols-4">
-          {liveStats.map((s) => (
-            <div key={s.label} className={`flex flex-col gap-1.5 rounded-xl px-[18px] py-3.5 ${s.bg}`}>
-              <span className="text-[13px] font-semibold">{s.label}</span>
-              <strong className="text-[32px] font-bold">{s.value}</strong>
+        {tab === "overview" && (
+          <Overview books={books} transactions={transactions} students={students} onAction={onAction} onStat={goStat} />
+        )}
+
+        {tab === "books" && (
+          <section className="mb-10">
+            <div className="mb-3 flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between">
+              <h2 className="text-xl font-bold">Book Catalog</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="search"
+                  placeholder="Search by title or author"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className={`${selectSm} w-full md:w-60`}
+                />
+                <button className={btnSecondary} onClick={() => setShowImport(true)}>Bulk Import</button>
+                <button className={btnPrimary} onClick={() => setShowModal(true)}>+ Add Book</button>
+              </div>
             </div>
-          ))}
-        </section>
-
-        <section className="mb-10">
-          <div className="mb-3 flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between">
-            <h2 className="text-xl font-bold">Book Catalog</h2>
-            <input
-              type="search"
-              placeholder="Search by title or author"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className={`${selectSm} w-full md:w-60`}
+            <p className="mb-2 text-[13px] text-gray-500">
+              {filteredBooks.length} {filteredBooks.length === 1 ? "title" : "titles"} in the catalog
+            </p>
+            <SortableTable
+              key={`${bookSort.key}-${bookSort.dir}`}
+              columns={[
+                ...bookCols.slice(0, -2),
+                { key: "copies", label: "Copies", render: (r) => `${copiesLeft(r)} of ${r.totalCopies ?? 1}` },
+                ...bookCols.slice(-2),
+                {
+                  key: "issue",
+                  label: "Issue",
+                  render: (r) => (
+                    <button className={`${btnSmall} py-1.5`} disabled={copiesLeft(r) < 1} onClick={() => setIssueCtx({ book: r })}>
+                      Issue
+                    </button>
+                  ),
+                },
+              ]}
+              rows={filteredBooks}
+              resetKey={query}
+              defaultSort={bookSort}
+              emptyText={books.length === 0 ? "No books yet. Select + Add Book to add one." : undefined}
             />
-          </div>
-          <SortableTable
-            columns={bookCols}
-            rows={filteredBooks}
-            resetKey={query}
-            defaultSort={{ key: "title", dir: "asc" }}
-            emptyText={books.length === 0 ? "No books yet. Select + Add Book to add one." : undefined}
-          />
-        </section>
+          </section>
+        )}
 
-        <section className="mb-10">
-          <div className="mb-3 flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between">
-            <h2 className="text-xl font-bold">Transaction History</h2>
-            <select className={selectSm} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status">
-              <option>All Statuses</option>
-              <option>Not Returned</option>
-              <option>Returned</option>
-            </select>
-          </div>
-          <SortableTable
-            columns={txCols}
-            rows={filteredTx}
-            resetKey={statusFilter}
-            defaultSort={{ key: "borrowedOn", dir: "desc" }}
-            emptyText={transactions.length === 0 ? "No transactions yet." : undefined}
-          />
-        </section>
+        {tab === "borrowers" && (
+          <section className="mb-10">
+            <div className="mb-4 flex gap-2">
+              <button className={chip(borrowerView === "lookup")} onClick={() => setBorrowerView("lookup")}>Lookup</button>
+              <button className={chip(borrowerView === "transactions")} onClick={() => setBorrowerView("transactions")}>Transactions</button>
+            </div>
+
+            {borrowerView === "lookup" && (
+              <>
+                <input
+                  type="search"
+                  placeholder="Search by name, email, or phone"
+                  value={studentQuery}
+                  onChange={(e) => { setStudentQuery(e.target.value); setStudentPage(1); }}
+                  className={`${selectSm} mb-3 w-full md:w-80`}
+                />
+                {foundStudents.length === 0 ? (
+                  <p className="p-6 text-center text-gray-500">No students found.</p>
+                ) : (
+                  <div className="flex flex-col gap-2.5">
+                    {shownStudents.map((s) => {
+                      const active = transactions.filter((t) => t.borrowerEmail === s.email && !isReturned(t));
+                      const od = active.filter((t) => t.overdue).length;
+                      return (
+                        <button
+                          key={s.email}
+                          onClick={() => setStudentEmail(s.email)}
+                          className="flex cursor-pointer items-center gap-3 rounded-xl border border-[#4a1f1f]/20 bg-white p-3 text-left hover:bg-[#faf6f0]"
+                        >
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#4a1f1f] font-bold text-white">
+                            {s.fullName.charAt(0).toUpperCase()}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <strong className="block">{s.fullName}</strong>
+                            <span className="block truncate text-xs text-gray-600">{s.email}</span>
+                            <span className="block text-xs text-gray-600">{s.phone}</span>
+                          </span>
+                          <span className="flex flex-col items-end gap-1">
+                            <span className="rounded-full bg-[#4a1f1f] px-2.5 py-[3px] text-[11px] font-bold text-white">{active.length}/{MAX_LOANS} books</span>
+                            {od > 0 && <span className="rounded-full bg-[#c0121f] px-2.5 py-[3px] text-[11px] font-bold text-white">{od} overdue</span>}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    <Pagination page={sCur} totalPages={sPages} onChange={setStudentPage} />
+                  </div>
+                )}
+              </>
+            )}
+
+            {borrowerView === "transactions" && (
+              <>
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {["All Statuses", "Not Returned", "Overdue", "Returned"].map((f) => (
+                    <button key={f} className={chip(statusFilter === f, f === "Overdue")} onClick={() => setStatusFilter(f)}>
+                      {f === "All Statuses" ? "All" : f} ({txCount(f)})
+                    </button>
+                  ))}
+                </div>
+                <SortableTable
+                  columns={txCols}
+                  rows={filteredTx}
+                  resetKey={statusFilter}
+                  defaultSort={{ key: "borrowedOn", dir: "desc" }}
+                  emptyText={transactions.length === 0 ? "No transactions yet." : undefined}
+                />
+              </>
+            )}
+          </section>
+        )}
       </main>
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-md bg-[#1b1b1b] px-4 py-2.5 text-[13px] font-semibold text-white shadow-lg" role="status">
+          {toast}
+        </div>
+      )}
 
       {showModal && <BookFormModal onClose={() => setShowModal(false)} onSave={addBook} />}
       {toEdit && <BookFormModal key={toEdit.id} book={toEdit} onClose={() => setToEdit(null)} onSave={saveEdit} />}
       {toDelete && <ConfirmDeleteModal book={toDelete} onCancel={() => setToDelete(null)} onConfirm={deleteBook} />}
+      {issueCtx && (
+        <IssueModal
+          students={students}
+          books={books}
+          transactions={transactions}
+          initial={issueCtx}
+          onClose={() => setIssueCtx(null)}
+          onIssue={issueBook}
+        />
+      )}
+      {openStudent && (
+        <StudentModal
+          student={openStudent}
+          transactions={transactions}
+          onClose={() => setStudentEmail(null)}
+          onIssue={(s) => setIssueCtx({ student: s })}
+          onReturn={returnTx}
+          onPayFine={payFine}
+        />
+      )}
+      {showImport && (
+        <ImportModal
+          books={books}
+          onClose={() => setShowImport(false)}
+          onDone={(msg) => { setShowImport(false); reload(); notify(msg); }}
+        />
+      )}
+      {showNotes && <NotificationsModal notes={notes} onClose={() => setShowNotes(false)} />}
     </div>
   );
 }

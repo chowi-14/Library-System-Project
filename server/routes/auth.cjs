@@ -150,4 +150,26 @@ router.put('/me', auth, async (req, res) => {
     }
 })
 
+router.put('/password', auth, async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body
+        if (!currentPassword || !newPassword)
+            return res.status(400).json({ error: 'Both passwords are required.' })
+        if (newPassword.length < 8)
+            return res.status(400).json({ error: 'Password must be at least 8 characters.' })
+
+        const user = await User.findById(req.user.id)
+        if (!user) return res.status(404).json({ error: 'User not found.' })
+        if (!(await bcrypt.compare(currentPassword, user.password_hash)))
+            return res.status(400).json({ error: 'Current password is incorrect.' })
+
+        user.password_hash = await bcrypt.hash(newPassword, 10)
+        await user.save()
+        res.json({ message: 'Password changed.' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Server error.' })
+    }
+})
+
 module.exports = router
