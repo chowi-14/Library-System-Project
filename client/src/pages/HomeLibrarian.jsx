@@ -192,6 +192,16 @@ const fmt = (iso) =>
     ? new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
     : "-";
 
+const fmtWhen = (iso) =>
+  new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+
+const fmtStamp = (v) => {
+  if (!v) return "-";
+  const s = String(v);
+  if (!/T\d{2}:\d{2}/.test(s)) return fmt(s.slice(0, 10));
+  return fmtWhen(s);
+};
+
 const EditIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -883,24 +893,24 @@ const buildNotifications = (transactions, books, requests = []) => {
   const now = Date.now();
   for (const t of transactions) {
     if (t.overdue) {
-      out.push({ tone: "red", title: `Overdue: ${t.title}`, sub: `${t.borrower} · ${t.daysOverdue} ${t.daysOverdue === 1 ? "day" : "days"} late` });
+      out.push({ tone: "red", bookId: t.bookId, title: `Overdue: ${t.title}`, sub: `${t.borrower} · ${t.daysOverdue} ${t.daysOverdue === 1 ? "day" : "days"} late` });
     } else if (!isReturned(t) && t.due && (new Date(t.due + "T00:00:00") - now) / 86400000 < 2) {
-      out.push({ tone: "amber", title: `Due soon: ${t.title}`, sub: `${t.borrower} · due ${fmt(t.due)}` });
+      out.push({ tone: "amber", bookId: t.bookId, title: `Due soon: ${t.title}`, sub: `${t.borrower} · due ${fmt(t.due)}` });
     }
     if (isReturned(t) && t.fine > 0 && !t.finePaid) {
-      out.push({ tone: "red", title: `Unpaid fine: ${peso(t.fine)}`, sub: `${t.borrower} · ${t.title}` });
+      out.push({ tone: "red", bookId: t.bookId, title: `Unpaid fine: ${peso(t.fine)}`, sub: `${t.borrower} · ${t.title}` });
     }
   }
   for (const r of requests) {
-    out.push({ tone: "amber", title: `Borrow request: ${r.title}`, sub: `${r.borrower} is waiting for approval.` });
+    out.push({ tone: "amber", bookId: r.bookId, title: `Borrow request: ${r.title}`, sub: `${r.borrower} is waiting for approval.` });
   }
   for (const t of transactions) {
     if (t.pendingReturn) {
-      out.push({ tone: "amber", title: `Return request: ${t.title}`, sub: `${t.borrower} is waiting for return verification.` });
+      out.push({ tone: "amber", bookId: t.bookId, title: `Return request: ${t.title}`, sub: `${t.borrower} is waiting for return verification.` });
     }
   }
   for (const b of books) {
-    if (copiesLeft(b) === 0) out.push({ tone: "maroon", title: `No copies left: ${b.title}`, sub: `All ${b.totalCopies ?? 1} copies are borrowed.` });
+    if (copiesLeft(b) === 0) out.push({ tone: "maroon", bookId: b.id, title: `No copies left: ${b.title}`, sub: `All ${b.totalCopies ?? 1} copies are borrowed.` });
   }
   return out;
 };
@@ -1520,14 +1530,66 @@ const TxActions = ({ t, onReturn, onPayFine }) => (
   </span>
 );
 
+// ---------- Collapsible borrowing record ----------
+function RecordCard({ t, book, onReturn, onPayFine }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`rounded-xl border ${t.overdue ? "border-[#c0121f]/60" : "border-[#2b2b2b]/30"}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full cursor-pointer items-center gap-3 border-0 bg-transparent p-3 text-left"
+      >
+        <div className="shrink-0"><Cover colors={book?.cover} image={book?.image} /></div>
+        <div className="min-w-0 flex-1">
+          <strong className="block truncate">{t.title}</strong>
+          <span className="block text-xs text-gray-500">Borrowed {fmtStamp(t.borrowedAt ?? t.borrowedOn)}</span>
+        </div>
+        <Badge status={t.status} overdue={t.overdue} />
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`shrink-0 text-[#4a1f1f] transition ${open ? "rotate-180" : ""}`}>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="border-t border-[#4a1f1f]/10 px-3 pb-3 pt-2.5 text-xs">
+          <dl className="grid grid-cols-1 gap-y-1.5">
+            <div>
+              <dt className="text-gray-500">Borrowed</dt>
+              <dd className="font-semibold">{fmtStamp(t.borrowedAt ?? t.borrowedOn)}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">Due</dt>
+              <dd className="font-semibold">{fmtStamp(t.dueAt ?? t.due)}</dd>
+            </div>
+            {isReturned(t) && (
+              <div>
+                <dt className="text-gray-500">Returned</dt>
+                <dd className="font-semibold">{fmtStamp(t.returnedAt ?? t.returned)}</dd>
+              </div>
+            )}
+          </dl>
+          {t.fine > 0 && (
+            <div className={`mt-2 text-[13px] font-bold ${t.finePaid ? "text-[#0c7a43]" : "text-[#c0121f]"}`}>
+              Fine: {peso(t.fine)} ({t.daysOverdue} {t.daysOverdue === 1 ? "day" : "days"} late){t.finePaid ? " · PAID" : ""}
+            </div>
+          )}
+          <div className="mt-2 text-right"><TxActions t={t} onReturn={onReturn} onPayFine={onPayFine} /></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- Student detail ----------
-function StudentModal({ student, transactions, onClose, onIssue, onReturn, onPayFine }) {
+function StudentModal({ student, transactions, books = [], onClose, onIssue, onReturn, onPayFine }) {
   const [page, setPage] = useState(1);
   const records = transactions.filter((t) => t.borrowerEmail === student.email);
   const active = records.filter((t) => !isReturned(t));
   const problem = eligibility(student, null, transactions);
   const fines = records.filter((t) => t.fine > 0 && !t.finePaid).reduce((s, t) => s + t.fine, 0);
-  const size = 3;
+  const size = 5;
   const pages = Math.max(1, Math.ceil(records.length / size));
   const cur = Math.min(page, pages);
   const shown = records.slice((cur - 1) * size, cur * size);
@@ -1606,20 +1668,13 @@ function StudentModal({ student, transactions, onClose, onIssue, onReturn, onPay
         ) : (
           <>
             {shown.map((t) => (
-              <div key={t.id} className={`rounded-xl border p-3 ${t.overdue ? "border-[#c0121f]/60" : "border-[#2b2b2b]/30"}`}>
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <strong>{t.title}</strong>
-                  <Badge status={t.status} overdue={t.overdue} />
-                </div>
-                <div className="text-xs text-gray-500">Borrowed {fmt(t.borrowedOn)} · Due {fmt(t.due)}</div>
-                {isReturned(t) && <div className="text-xs text-gray-500">Returned {fmt(t.returned)}</div>}
-                {t.fine > 0 && (
-                  <div className={`text-[13px] font-bold ${t.finePaid ? "text-[#0c7a43]" : "text-[#c0121f]"}`}>
-                    Fine: {peso(t.fine)} ({t.daysOverdue} {t.daysOverdue === 1 ? "day" : "days"} late){t.finePaid ? " · PAID" : ""}
-                  </div>
-                )}
-                <div className="mt-2 text-right"><TxActions t={t} onReturn={onReturn} onPayFine={onPayFine} /></div>
-              </div>
+              <RecordCard
+                key={t.id}
+                t={t}
+                book={books.find((b) => b.id === t.bookId)}
+                onReturn={onReturn}
+                onPayFine={onPayFine}
+              />
             ))}
             <Pagination page={cur} totalPages={pages} onChange={setPage} />
           </>
@@ -1632,7 +1687,7 @@ function StudentModal({ student, transactions, onClose, onIssue, onReturn, onPay
 }
 
 // ---------- Notifications ----------
-function NotificationsModal({ notes, onClear, onClose }) {
+function NotificationsModal({ notes, books, times, onClear, onClose }) {
   const [page, setPage] = useState(1);
   const size = 6;
   const pages = Math.max(1, Math.ceil(notes.length / size));
@@ -1640,19 +1695,29 @@ function NotificationsModal({ notes, onClear, onClose }) {
   return (
     <Modal title="Notifications" titleId="notes-title" onClose={onClose}>
       <div className="flex flex-col gap-3 px-6 pt-[22px] pb-[26px] text-[13px]">
-        <p className="text-gray-500">
-          {notes.length === 0 ? "Nothing needs your attention." : `${notes.length} ${notes.length === 1 ? "notification" : "notifications"}`}
-        </p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-gray-500">
+            {notes.length === 0 ? "Nothing needs your attention." : `${notes.length} ${notes.length === 1 ? "notification" : "notifications"}`}
+          </p>
+          {notes.length > 0 && (
+            <button type="button" className={btnSmall} onClick={onClear}>Clear all</button>
+          )}
+        </div>
         {notes.length === 0 && <p className="rounded-xl bg-[#faf6f0] p-4 font-semibold text-[#0c7a43]">You're all caught up.</p>}
-        {notes.length > 0 && (
-          <button type="button" className={`${btnSmall} self-end`} onClick={onClear}>Clear all</button>
-        )}
-        {notes.slice((cur - 1) * size, cur * size).map((n, i) => (
-          <div key={i} className="flex items-start gap-3 rounded-xl border border-[#2b2b2b]/20 p-3">
-            <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ background: TONES[n.tone] }} />
-            <div><div className="font-bold">{n.title}</div><div className="text-gray-600">{n.sub}</div></div>
-          </div>
-        ))}
+        {notes.slice((cur - 1) * size, cur * size).map((n) => {
+          const book = books.find((b) => b.id === n.bookId);
+          const when = times[`${n.title}|${n.sub}`];
+          return (
+            <div key={`${n.title}|${n.sub}`} className="flex items-start gap-3 rounded-xl border border-[#2b2b2b]/20 p-3">
+              <div className="shrink-0"><Cover colors={book?.cover} image={book?.image} /></div>
+              <div className="min-w-0 flex-1">
+                <div className="font-bold">{n.title}</div>
+                <div className="text-gray-600">{n.sub}</div>
+                {when && <div className="mt-1 text-xs text-gray-400">{fmtWhen(when)}</div>}
+              </div>
+            </div>
+          );
+        })}
         {notes.length > size && <Pagination page={cur} totalPages={pages} onChange={setPage} />}
       </div>
     </Modal>
@@ -1688,7 +1753,7 @@ function ChartTooltip({ active, payload, label, suffix = "", unit = "" }) {
   );
 }
 
-function LineChart({ gid, labels, series, height = 240, showAvg = false }) {
+function LineChart({ gid, labels, series, height = 240, showAvg = false, showLegend = true }) {
   const data = labels.map((label, i) => {
     const row = { label };
     series.forEach((s) => { row[s.name] = s.values[i]; });
@@ -1703,8 +1768,8 @@ function LineChart({ gid, labels, series, height = 240, showAvg = false }) {
         <defs>
           {series.map((s, k) => (
             <linearGradient key={s.name} id={`${gid}-${k}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={s.color} stopOpacity={0.3} />
-              <stop offset="100%" stopColor={s.color} stopOpacity={0} />
+              <stop offset="0%" stopColor={s.color} stopOpacity={0.12} />
+              <stop offset="100%" stopColor={s.color} stopOpacity={0.02} />
             </linearGradient>
           ))}
         </defs>
@@ -1712,7 +1777,7 @@ function LineChart({ gid, labels, series, height = 240, showAvg = false }) {
         <XAxis dataKey="label" tick={AXIS_TICK_SM} axisLine={false} tickLine={false} interval="preserveStartEnd" />
         <YAxis tick={AXIS_TICK_SM} axisLine={false} tickLine={false} allowDecimals={false} />
         <Tooltip content={<ChartTooltip />} cursor={{ stroke: "#E5E7EB", strokeWidth: 1 }} />
-        {series.length > 1 && (
+        {showLegend && series.length > 1 && (
           <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, color: "#6B7280", paddingTop: 8 }} />
         )}
         {avg !== null && (
@@ -1733,25 +1798,28 @@ function LineChart({ gid, labels, series, height = 240, showAvg = false }) {
   );
 }
 
-function BorrowChart({ transactions }) {
+function BorrowChart({ transactions, requests = [] }) {
   const days = Array.from({ length: 7 }, (_, i) => {
     const iso = new Date(Date.now() - (6 - i) * 86400000).toISOString().slice(0, 10);
     return {
       iso,
-      label: new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" }),
+      label: new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", day: "numeric" }),
       borrowed: transactions.filter((t) => t.borrowedOn === iso).length,
       returned: transactions.filter((t) => t.returned === iso).length,
+      pending: requests.filter((r) => String(r.requestedOn).slice(0, 10) === iso).length,
+      overdue: transactions.filter((t) => String(t.due).slice(0, 10) === iso && (t.overdue || t.fine > 0)).length,
     };
   });
   const totalB = days.reduce((s, d) => s + d.borrowed, 0);
   const totalR = days.reduce((s, d) => s + d.returned, 0);
+  const totalP = days.reduce((s, d) => s + d.pending, 0);
+  const totalO = days.reduce((s, d) => s + d.overdue, 0);
+  const rangeLabel = `${new Date(days[0].iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${new Date(days[6].iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  const todayLabel = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 
   const Stat = ({ color, label, value }) => (
-    <div className="rounded-xl bg-[#faf6f0] px-4 py-2">
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />
-        {label}
-      </div>
+    <div className="rounded-xl border-2 bg-white px-4 py-2" style={{ borderColor: color }}>
+      <div className="text-xs font-semibold" style={{ color }}>{label}</div>
       <strong className="text-2xl tabular-nums text-[#1b1b1b]">{value}</strong>
     </div>
   );
@@ -1759,20 +1827,29 @@ function BorrowChart({ transactions }) {
   return (
     <div className="rounded-2xl border border-[#4a1f1f]/15 bg-white p-5 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-3">
-          <Stat color="#4a1f1f" label="Borrowed" value={totalB} />
+        <div className="flex flex-wrap gap-3">
+          <Stat color="#433429" label="Borrowed" value={totalB} />
           <Stat color="#0c7a43" label="Returned" value={totalR} />
+          <Stat color="#eab308" label="Pending" value={totalP} />
+          <Stat color="#c0121f" label="Overdue" value={totalO} />
         </div>
         <span className="rounded-full bg-[#faf6f0] px-3 py-1 text-xs font-semibold text-[#4a1f1f]">Last 7 days</span>
       </div>
       <LineChart
         gid="week"
         labels={days.map((d) => d.label)}
+        showLegend={false}
         series={[
-          { name: "Borrowed", color: "#4a1f1f", values: days.map((d) => d.borrowed) },
+          { name: "Borrowed", color: "#433429", values: days.map((d) => d.borrowed) },
           { name: "Returned", color: "#0c7a43", values: days.map((d) => d.returned) },
+          { name: "Pending", color: "#eab308", values: days.map((d) => d.pending) },
+          { name: "Overdue", color: "#c0121f", values: days.map((d) => d.overdue) },
         ]}
       />
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#4a1f1f]/10 pt-3 text-xs text-gray-500">
+        <span>Showing: <strong className="text-[#4a1f1f]">{rangeLabel}</strong></span>
+        <span>Today: <strong className="text-[#4a1f1f]">{todayLabel}</strong></span>
+      </div>
     </div>
   );
 }
@@ -1842,7 +1919,7 @@ function Overview({ books, transactions, requests, onAction, onStat }) {
         <h2 className="text-lg font-bold tracking-tight text-[#4a1f1f]">Borrowing Activity</h2>
         <button onClick={() => onAction("analytics")} className="cursor-pointer border-0 bg-transparent text-xs font-bold text-[#0b4a8b] hover:underline">View analytics</button>
       </div>
-      <div className="mb-8"><BorrowChart transactions={transactions} /></div>
+      <div className="mb-8"><BorrowChart transactions={transactions} requests={requests} /></div>
 
       <div className="mb-8 grid gap-8 md:grid-cols-2">
         <section>
@@ -1992,8 +2069,28 @@ const DONUT_COLORS = ["#4a1f1f", "#eea51c", "#0c7a43", "#0b4a8b", "#c0121f", "#7
 
 const cutLabel = (s, n = 22) => (String(s).length > n ? `${String(s).slice(0, n - 1)}…` : s);
 
+// Hover card for Top Borrowed Books: cover, title, author, genre
+function BookTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const { label, value, book } = payload[0].payload;
+  const genre = book?.category
+    ? `${book.category}${book.subcategory ? ` · ${book.subcategory}` : ""}`
+    : "-";
+  return (
+    <div className="flex w-[250px] gap-3 rounded-xl border border-[#E5E7EB] bg-white p-3 shadow-lg">
+      <div className="shrink-0"><Cover colors={book?.cover} image={book?.image} size="lg" /></div>
+      <div className="min-w-0 text-xs">
+        <strong className="block break-words text-[13px] leading-tight text-[#4a1f1f]">{book?.title || label}</strong>
+        <span className="mt-0.5 block text-gray-600">by {book?.author || "-"}</span>
+        <span className="mt-1 block text-gray-500">{genre}</span>
+        <span className="mt-1.5 block font-bold text-[#4a1f1f]">{value} {value === 1 ? "borrow" : "borrows"}</span>
+      </div>
+    </div>
+  );
+}
+
 // Horizontal bars with a soft gradient and a light track behind each bar
-function HBars({ rows, color = "#4a1f1f", suffix = "", unit = "transactions", max: fixedMax, empty }) {
+function HBars({ rows, color = "#4a1f1f", suffix = "", unit = "transactions", max: fixedMax, empty, tooltip }) {
   if (!rows.length) return <EmptyChart text={empty} />;
   const top = Math.max(...rows.map((r) => r.value), 1);
   const gid = `hb-${color.replace("#", "")}`;
@@ -2014,7 +2111,12 @@ function HBars({ rows, color = "#4a1f1f", suffix = "", unit = "transactions", ma
           tickFormatter={(v) => `${v}${suffix}`}
         />
         <YAxis type="category" dataKey="label" width={130} tick={AXIS_TICK} tickFormatter={(s) => cutLabel(s)} axisLine={false} tickLine={false} />
-        <Tooltip content={<ChartTooltip suffix={suffix} unit={unit} />} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
+        <Tooltip
+          content={tooltip || <ChartTooltip suffix={suffix} unit={unit} />}
+          cursor={{ fill: "rgba(0,0,0,0.03)" }}
+          wrapperStyle={{ zIndex: 50 }}
+          allowEscapeViewBox={{ x: false, y: true }}
+        />
         <Bar dataKey="value" fill={`url(#${gid})`} radius={[0, 8, 8, 0]} maxBarSize={22} background={{ fill: "#faf6f0", radius: 8 }}>
           <LabelList
             dataKey="value" position="right"
@@ -2103,7 +2205,7 @@ function Donut({ rows, unit = "transactions", empty }) {
             >
               {data.map((r, i) => <Cell key={r.label} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
             </Pie>
-            <Tooltip content={<DonutTooltip total={total} unit={unit} />} />
+            <Tooltip content={<DonutTooltip total={total} unit={unit} />} wrapperStyle={{ zIndex: 50 }} />
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
@@ -2210,7 +2312,7 @@ function Analytics({ books, transactions, students }) {
   const topBooks = tally(
     scoped.filter((r) => (bookCat === "All" || r.category === bookCat) && (bookSub === "All" || r.subcategory === bookSub)),
     (r) => r.title
-  ).slice(0, bookTop);
+  ).slice(0, bookTop).map((r) => ({ ...r, book: books.find((b) => b.title === r.label) }));
 
   // 2. Category
   const byCategory = tally(scoped, (r) => r.category);
@@ -2336,7 +2438,7 @@ function Analytics({ books, transactions, students }) {
             </>
           }
         >
-          <HBars rows={topBooks} color="#4a1f1f" />
+          <HBars rows={topBooks} color="#4a1f1f" tooltip={<BookTooltip />} />
         </ChartCard>
 
         <ChartCard title="Borrowing by Category" purpose="Most borrowed subject areas, highest to lowest. Guides collection development.">
@@ -2680,7 +2782,7 @@ function ReturnModal({ tx, book, onCancel, onConfirm }) {
 }
 
 // ---------- Verify return (scan QR or type the number) ----------
-function VerifyReturnModal({ onClose, onDone }) {
+function VerifyReturnModal({ books = [], onClose, onDone }) {
   const [mode, setMode] = useState("scan");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
@@ -2747,6 +2849,8 @@ function VerifyReturnModal({ onClose, onDone }) {
     verify(v);
   };
 
+  const book = result ? books.find((b) => b.id === result.bookId) : null;
+
   const tab = (k, label) => (
     <button
       type="button"
@@ -2762,14 +2866,42 @@ function VerifyReturnModal({ onClose, onDone }) {
       <div className="flex flex-col gap-3.5 px-6 pt-[22px] pb-[26px] text-[13px]">
         {result ? (
           <>
-            <div className="rounded-xl bg-[#0c7a43]/10 p-4 text-[#0c7a43]">
+            <div className="rounded-xl bg-[#0c7a43]/10 p-4 text-center text-[#0c7a43]">
               <strong className="block text-base">Return confirmed</strong>
-              <span className="block">{result.title}</span>
-              <span className="block">Returned by {result.borrower}</span>
-              {result.fine > 0 && (
-                <span className="mt-1 block font-bold text-[#c0121f]">
-                  {result.daysOverdue} {result.daysOverdue === 1 ? "day" : "days"} late. Fine due: {peso(result.fine)}
-                </span>
+              <span className="block">{result.title} was returned by {result.borrower}.</span>
+            </div>
+
+            {book && <BookInfoCard book={book} />}
+
+            <div className="rounded-xl border border-[#4a1f1f]/20 bg-white p-3">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Borrow details</h4>
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                {[
+                  ["Returned by", result.borrower],
+                  ["Email", result.borrowerEmail],
+                  ["Borrowed on", fmtStamp(result.borrowedAt ?? result.borrowedOn)],
+                  ["Due date", fmtStamp(result.dueAt ?? result.due)],
+                  ["Returned on", fmtStamp(result.returnedAt ?? result.returned)],
+                ].map(([label, value]) => (
+                  <div key={label} className="min-w-0">
+                    <dt className="text-gray-500">{label}</dt>
+                    <dd className="break-words font-semibold">{value || "-"}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
+            <div className={`rounded-lg p-3 text-[13px] ${result.fine > 0 ? "bg-[#c0121f]/10" : "bg-[#0c7a43]/10"}`}>
+              {result.fine > 0 ? (
+                <>
+                  <div className="font-bold text-[#c0121f]">Late return</div>
+                  <div className="mt-1">
+                    {result.daysOverdue} {result.daysOverdue === 1 ? "day" : "days"} late × ₱{FINE_PER_DAY.toFixed(2)}/day
+                  </div>
+                  <div className="mt-0.5 text-base font-extrabold text-[#c0121f]">Fine due: {peso(result.fine)}</div>
+                </>
+              ) : (
+                <div className="font-bold text-[#0c7a43]">Returned on time. No fine.</div>
               )}
             </div>
             <button type="button" className={btnPrimary} onClick={() => { setResult(null); setCode(""); }}>Verify another</button>
@@ -3149,6 +3281,10 @@ export default function HomeLibrarian() {
     try { return new Set(JSON.parse(localStorage.getItem("clearedNotes:librarian") || "[]")); }
     catch { return new Set(); }
   });
+  const [noteTimes, setNoteTimes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("noteTimes:librarian") || "{}"); }
+    catch { return {}; }
+  });
   const returning = useRef(new Set());
   const [tab, setTab] = useState("overview");
   const [borrowerView, setBorrowerView] = useState("lookup");
@@ -3166,6 +3302,12 @@ export default function HomeLibrarian() {
   const [bookView, setBookView] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [subFilter, setSubFilter] = useState("All");
+
+  useEffect(() => {
+    setQuery("");
+    setStudentQuery("");
+    setStudentPage(1);
+  }, [tab, borrowerView]);
 
   const notify = (m) => {
     setToast(m);
@@ -3418,7 +3560,7 @@ export default function HomeLibrarian() {
         </button>
       ),
     },
-    { key: "borrowedOn", label: "Borrowed On", sortable: true, render: (r) => fmt(r.borrowedOn) },
+    { key: "borrowedOn", label: "Borrowed On", sortable: true, render: (r) => fmtStamp(r.borrowedAt ?? r.borrowedOn) },
     { key: "due", label: "Due", sortable: true, render: (r) => fmt(r.due) },
     { key: "returned", label: "Return Date", sortable: true, render: (r) => fmt(r.returned) },
     { key: "status", label: "Status", sortable: true, render: (r) => <Badge status={r.status} overdue={r.overdue} /> },
@@ -3444,6 +3586,20 @@ export default function HomeLibrarian() {
     setShowNotes(true);
   };
   const overdueTotal = transactions.filter((t) => t.overdue).length;
+
+  const noteSig = notes.map(noteKey).join("\n");
+  useEffect(() => {
+    const missing = notes.filter((n) => !noteTimes[noteKey(n)]);
+    if (!missing.length) return;
+    const now = new Date().toISOString();
+    setNoteTimes((prev) => {
+      const next = { ...prev };
+      missing.forEach((n) => { next[noteKey(n)] = next[noteKey(n)] || now; });
+      try { localStorage.setItem("noteTimes:librarian", JSON.stringify(next)); } catch { /* storage unavailable */ }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noteSig]);
 
   const sq = studentQuery.trim().toLowerCase();
   const foundStudents = students.filter(
@@ -3706,6 +3862,7 @@ export default function HomeLibrarian() {
         <StudentModal
           student={openStudent}
           transactions={transactions}
+          books={books}
           onClose={() => setStudentEmail(null)}
           onIssue={(s) => setIssueCtx({ student: s })}
           onReturn={setToReturn}
@@ -3732,9 +3889,10 @@ export default function HomeLibrarian() {
         />
       )}
       {bookView && <BookDetailModal book={bookView} onClose={() => setBookView(null)} />}
-      {showNotes && <NotificationsModal notes={notes} onClear={clearNotes} onClose={() => setShowNotes(false)} />}
+      {showNotes && <NotificationsModal notes={notes} books={books} times={noteTimes} onClear={clearNotes} onClose={() => setShowNotes(false)} />}
       {showVerify && (
         <VerifyReturnModal
+          books={books}
           onClose={() => setShowVerify(false)}
           onDone={(tx) => {
             reload();
