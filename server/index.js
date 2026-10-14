@@ -13,6 +13,19 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }))
 app.use(express.json({ limit: '5mb' }))
+
+let dbPromise
+app.use(async (_req, _res, next) => {
+    try {
+        dbPromise ??= mongoose.connect(process.env.MONGODB_URI)
+        await dbPromise
+        next()
+    } catch (err) {
+        dbPromise = undefined
+        next(err)
+    }
+})
+
 app.use("/api/auth", authRoutes)
 app.use("/api/books", bookRoutes)
 app.use("/api/borrowings", borrowingRoutes)
@@ -25,9 +38,9 @@ app.use((err, _req, res, _next) => {
 })
 
 
-mongoose.connect(process.env.MONGODB_URI)
-    .then(() => console.log("MongoDB connected"))
-    .catch((err) => console.error(err))
+// mongoose.connect(process.env.MONGODB_URI)
+//     .then(() => console.log("MongoDB connected"))
+//     .catch((err) => console.error(err))
 
 const Item = mongoose.model("Item", new mongoose.Schema({ name: String}))
 
@@ -39,4 +52,10 @@ app.post("/api/items", async(req, res) => {
     res.status(201).json(await Item.create(req.body))
 })
 
-app.listen(process.env.PORT, () => console.log(`Server Running on port ${process.env.PORT}`))
+const PORT = process.env.PORT || 5001
+
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => console.log(`Server on ${PORT}`))
+}
+
+export default app
