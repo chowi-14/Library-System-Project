@@ -699,7 +699,10 @@ const parseCsv = (input) => {
   return rows;
 };
 
-const readImport = (text, existing) => {
+const cleanIsbn = (s) => String(s ?? "").replace(/[\s-]/g, "").toUpperCase();
+const keyOf = (t, a) => `${t.toLowerCase()}|${a.toLowerCase()}`;
+
+const readImport = (text, existing, activeFor = () => 0) => {
   const table = parseCsv(text.replace(/^\uFEFF/, ""));
   if (table.length < 2) return { rows: [], error: "The file needs a header row and at least one book." };
   const head = {};
@@ -716,48 +719,124 @@ const readImport = (text, existing) => {
   if (missing.length) return { rows: [], error: `Missing column(s): ${missing.join(", ")}.` };
 
   const cell = (r, k) => (head[k] === undefined ? "" : (r[head[k]] ?? "").trim());
-  const keyOf = (t, a) => `${t.toLowerCase()}|${a.toLowerCase()}`;
-  const seen = new Set(existing.map((b) => keyOf(b.title, b.author)));
+
+  const byIsbn = new Map();
+  const byTitle = new Map();
+  existing.forEach((b) => {
+    const i = cleanIsbn(b.isbn);
+    if (i) byIsbn.set(i, b);
+    byTitle.set(keyOf(b.title, b.author), b);
+  });
+  const fileSeen = new Map(); // key -> row number
+
+  const COMPARE = [
+    ["title", "Title"], ["author", "Author"], ["isbn", "ISBN"], ["publisher", "Publisher"],
+    ["category", "Category"], ["subcategory", "Subcategory"], ["published", "Published date"],
+    ["pages", "Pages"], ["copies", "Copies"], ["description", "Description"],
+    ["image", "Image"], ["shelf", "Shelf"],
+  ];
 
   const rows = table.slice(1, MAX_IMPORT_ROWS + 1).map((r, i) => {
     const cat = CATEGORIES.find((c) => c.toLowerCase() === cell(r, "category").toLowerCase());
     const form = {
       title: cell(r, "title"), author: cell(r, "author"), publisher: cell(r, "publisher"),
-      category: cat || "", subcategory: cell(r, "subcategory"), published: cell(r, "published"), description: cell(r, "description"),
-      image: cell(r, "image"), copies: cell(r, "copies") || "1",
+      category: cat || "", subcategory: cell(r, "subcategory"), published: cell(r, "published"),
+      description: cell(r, "description"), image: cell(r, "image"), copies: cell(r, "copies") || "1",
       isbn: cell(r, "isbn"), pages: cell(r, "pages"), shelf: cell(r, "shelf"),
     };
     const e = validate(form);
     if (!cat) e.category = `Category must be one of: ${CATEGORIES.join(", ")}.`;
     if (form.published && !/^\d{4}-\d{2}-\d{2}$/.test(form.published)) e.published = "Use the date format YYYY-MM-DD.";
     const errors = Object.values(e);
-    if (!errors.length) {
-      const k = keyOf(form.title, form.author);
-      if (seen.has(k)) errors.push("Duplicate: this title and author already exist.");
-      else seen.add(k);
+    const row = { line: i + 2, label: form.title || "(no title)", form, errors, status: "invalid", match: null, changes: [], note: "" };
+    if (errors.length) return row;
+
+    const isbn = cleanIsbn(form.isbn);
+    const tKey = keyOf(form.title, form.author);
+
+    const prior = fileSeen.get(isbn) ?? fileSeen.get(tKey);
+    if (prior) {
+      row.status = "duplicate";
+      row.note = `Same book as row ${prior} in this file.`;
+      return row;
     }
-    return { line: i + 2, label: form.title || "(no title)", form, errors };
+
+    const byI = byIsbn.get(isbn);
+    const byT = byTitle.get(tKey);
+    if (byI && byT && byI.id !== byT.id) {
+      errors.push("The ISBN matches one catalog book but the title and author match another.");
+      return row;
+    }
+    const match = byI || byT;
+    fileSeen.set(isbn, row.line);
+    fileSeen.set(tKey, row.line);
+
+    if (!match) {
+      row.status = "new";
+      form.isbn = isbn;
+      return row;
+    }
+
+    // Existing book: blank optional cells keep the current value.
+    const keep = (k) => (form[k] === "" ? String(match[k] ?? "") : form[k]);
+    form.subcategory = keep("subcategory");
+    form.description = keep("description");
+    form.shelf = keep("shelf");
+    form.image = keep("image");
+    const oldCopies = match.copies ?? match.totalCopies ?? 1;
+    if (!cell(r, "copies")) form.copies = String(oldCopies);
+    form.isbn = isbn;
+
+    if (Number(form.copies) < activeFor(match.id)) {
+      errors.push(`${activeFor(match.id)} copies are currently borrowed. Total copies can't be lower than that.`);
+      return row;
+    }
+
+    const oldVal = (k) =>
+      k === "isbn" ? cleanIsbn(match.isbn) : k === "copies" ? oldCopies : match[k] ?? "";
+    row.changes = COMPARE.filter(([k]) => String(form[k]).trim() !== String(oldVal(k)).trim()).map(([, label]) => label);
+    row.match = match;
+    if (row.changes.length) row.status = "update";
+    else {
+      row.status = "duplicate";
+      row.note = "Already in the catalog with the same details.";
+    }
+    return row;
   });
   return { rows, error: table.length - 1 > MAX_IMPORT_ROWS ? `Only the first ${MAX_IMPORT_ROWS} rows were read.` : "" };
 };
 
-function ImportModal({ books, ask, onClose, onDone }) {
+const IMPORT_STATUS = {
+  new: { label: "New", color: "#0c7a43" },
+  update: { label: "Update", color: "#0b4a8b" },
+  duplicate: { label: "Duplicate", color: "#8a5a00" },
+  invalid: { label: "Invalid", color: "#c0121f" },
+};
+
+function ImportModal({ books, activeFor, ask, onClose, onDone }) {
   const [fileName, setFileName] = useState("");
   const [fileError, setFileError] = useState("");
   const [rows, setRows] = useState([]);
+  const [view, setView] = useState("all");
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
-  const good = rows.filter((r) => !r.errors.length);
-  const bad = rows.filter((r) => r.errors.length);
+
+  const of = (s) => rows.filter((r) => r.status === s);
+  const fresh = of("new");
+  const upd = of("update");
+  const dups = of("duplicate");
+  const invalid = of("invalid");
+  const shown = (view === "all" ? rows : of(view));
 
   const pick = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     setFileName(file.name);
-    const res = readImport(await file.text(), books);
+    const res = readImport(await file.text(), books, activeFor);
     setRows(res.rows);
     setFileError(res.error);
+    setView("all");
   };
   const template = () => {
     const url = URL.createObjectURL(new Blob(["\uFEFF" + CSV_TEMPLATE], { type: "text/csv;charset=utf-8" }));
@@ -767,14 +846,27 @@ function ImportModal({ books, ask, onClose, onDone }) {
   };
   const run = async () => {
     setBusy(true);
-    let n = 0;
-    for (const r of good) {
+    let added = 0, updated = 0, failed = 0;
+    for (const r of [...fresh, ...upd]) {
       const { copies, pages, ...rest } = r.form;
-      try { await api("", { method: "POST", body: JSON.stringify({ ...rest, isbn: rest.isbn.replace(/[\s-]/g, "").toUpperCase(), copies: Number(copies), pages: Number(pages) }) }); n++; } catch { /* skipped */ }
+      const body = JSON.stringify({ ...rest, isbn: cleanIsbn(rest.isbn), copies: Number(copies), pages: Number(pages) });
+      try {
+        if (r.status === "update") { await api(`/${r.match.id}`, { method: "PUT", body }); updated++; }
+        else { await api("", { method: "POST", body }); added++; }
+      } catch { failed++; }
     }
-    const skipped = rows.length - n;
-    onDone(`Imported ${n} ${n === 1 ? "book" : "books"}${skipped > 0 ? ` (${skipped} skipped)` : ""}.`);
+    onDone(
+      `Imported: ${added} added, ${updated} updated, ${dups.length} duplicates skipped, ${invalid.length} invalid skipped` +
+      `${failed ? `, ${failed} failed` : ""}.`
+    );
   };
+
+  const detail = (r) =>
+    r.status === "invalid" ? r.errors.join(" ")
+    : r.status === "update" ? `Will change: ${r.changes.join(", ")}.`
+    : r.status === "duplicate" ? r.note
+    : "Will be added to the catalog.";
+  const total = fresh.length + upd.length;
 
   return (
     <Modal title="Bulk Import" titleId="import-title" onClose={onClose}>
@@ -783,7 +875,8 @@ function ImportModal({ books, ask, onClose, onDone }) {
         <button type="button" className={btnSecondary} onClick={template}>Download template (.csv)</button>
         <p>
           <strong>2.</strong> One book per row. Keep the header row. Categories: {CATEGORIES.join(", ")}. Date format: YYYY-MM-DD.
-          Max {MAX_IMPORT_ROWS} rows. Books already in the catalog (same title and author) are skipped.
+          Max {MAX_IMPORT_ROWS} rows. A row that matches a catalog book by ISBN (or title + author) <strong>updates</strong> it;
+          blank optional cells keep the current value. Identical rows are skipped as duplicates.
         </p>
         <p><strong>3.</strong> Upload your file.</p>
         <button type="button" className={`${btnSecondary} py-5`} onClick={() => fileRef.current?.click()}>
@@ -794,31 +887,58 @@ function ImportModal({ books, ask, onClose, onDone }) {
 
         {rows.length > 0 && (
           <>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-[#0c7a43]/40 bg-[#0c7a43]/10 p-3"><strong className="block text-2xl text-[#0c7a43]">{good.length}</strong>Ready to import</div>
-              <div className="rounded-xl border border-[#c0121f]/40 bg-[#c0121f]/10 p-3"><strong className="block text-2xl text-[#c0121f]">{bad.length}</strong>Will be skipped</div>
+            <div className="grid grid-cols-2 gap-2.5">
+              {Object.entries(IMPORT_STATUS).map(([k, m]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setView(view === k ? "all" : k)}
+                  className="cursor-pointer rounded-xl border p-3 text-left transition"
+                  style={{
+                    borderColor: m.color + "66",
+                    background: m.color + "14",
+                    opacity: view === "all" || view === k ? 1 : 0.45,
+                  }}
+                >
+                  <strong className="block text-2xl" style={{ color: m.color }}>{of(k).length}</strong>
+                  {m.label}
+                </button>
+              ))}
             </div>
-            {bad.length > 0 && (
-              <div className="max-h-48 overflow-y-auto rounded-lg border border-[#c0121f]/40 bg-[#c0121f]/5 p-3">
-                <p className="mb-2 font-bold text-[#c0121f]">Fix these rows and upload again:</p>
-                {bad.slice(0, 20).map((r) => (
-                  <div key={r.line} className="mb-2">
-                    <div className="font-bold">Row {r.line} · {r.label}</div>
-                    <div className="text-xs">{r.errors.join(" ")}</div>
+            <p className="text-xs text-gray-500">Select a box to filter the list.</p>
+
+            <div className="max-h-56 overflow-y-auto rounded-lg border border-[#4a1f1f]/20">
+              {shown.slice(0, 50).map((r) => {
+                const m = IMPORT_STATUS[r.status];
+                return (
+                  <div key={r.line} className="border-b border-[#4a1f1f]/10 p-2.5 last:border-b-0">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full px-2 py-0.5 text-[10.5px] font-bold text-white" style={{ background: m.color }}>{m.label}</span>
+                      <span className="min-w-0 flex-1 truncate font-bold">Row {r.line} · {r.label}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-gray-700">{detail(r)}</div>
                   </div>
-                ))}
-                {bad.length > 20 && <p className="text-xs text-gray-500">...and {bad.length - 20} more.</p>}
-              </div>
-            )}
+                );
+              })}
+              {shown.length > 50 && <p className="p-2.5 text-xs text-gray-500">...and {shown.length - 50} more.</p>}
+            </div>
+
+            {invalid.length > 0 && <p className="text-xs font-semibold text-[#c0121f]">Fix the invalid rows and upload again to include them.</p>}
+
             <button
               type="button"
               className={btnPrimary}
-              disabled={!good.length || busy}
+              disabled={!total || busy}
               onClick={() =>
-                ask("Import Books", `Import ${good.length} ${good.length === 1 ? "book" : "books"} into the catalog?`, "Yes, import", run)
+                ask(
+                  "Import Books",
+                  `Add ${fresh.length} new and update ${upd.length} existing ${upd.length === 1 ? "book" : "books"}? ${dups.length + invalid.length} rows will be skipped.`,
+                  "Yes, import",
+                  run
+                )
               }
             >
-              {busy ? "Importing..." : good.length ? `Import ${good.length} ${good.length === 1 ? "book" : "books"}` : "Nothing to import"}
+              {busy ? "Importing..." : total ? `Import (${fresh.length} new, ${upd.length} updates)` : "Nothing to import"}
             </button>
           </>
         )}
@@ -2372,6 +2492,7 @@ export default function HomeLibrarian() {
       {showImport && (
         <ImportModal
           books={books}
+          activeFor={activeFor}
           ask={ask}
           onClose={() => setShowImport(false)}
           onDone={(msg) => { setShowImport(false); reload(); notify(msg); }}
