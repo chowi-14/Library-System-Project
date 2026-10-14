@@ -214,7 +214,7 @@ const Badge = ({ status, overdue }) => {
 };
 
 const CATEGORIES = ["Fiction", "Non-Fiction", "Academic", "Restricted"];
-const EMPTY_FORM = { title: "", author: "", publisher: "", category: "", subcategory: "", published: "", description: "", image: "", copies: "1" };
+const EMPTY_FORM = { title: "", author: "", isbn: "", publisher: "", category: "", subcategory: "", published: "", pages: "", description: "", image: "", copies: "1", shelf: "" };
 const DESC_MAX = 300;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -264,9 +264,18 @@ const validate = (f) => {
   else if (f.published > todayISO()) e.published = "Date can't be in the future.";
 
   const desc = f.description.trim();
-  if (!desc) e.description = "Description is required.";
-  else if (desc.length < 10) e.description = "Write at least 10 characters.";
+  if (desc && desc.length < 10) e.description = "Write at least 10 characters, or leave it empty.";
   else if (desc.length > DESC_MAX) e.description = "Keep it under 300 characters.";
+
+  const isbn = String(f.isbn || "").replace(/[\s-]/g, "");
+  if (!isbn) e.isbn = "ISBN is required.";
+  else if (!/^(\d{9}[\dXx]|\d{13})$/.test(isbn)) e.isbn = "Enter a valid ISBN (10 or 13 digits).";
+
+  const pages = String(f.pages ?? "").trim();
+  if (!pages) e.pages = "Number of pages is required.";
+  else if (!/^\d+$/.test(pages) || +pages < 1 || +pages > 10000) e.pages = "Enter a whole number from 1 to 10000.";
+
+  if (String(f.shelf || "").trim().length > 40) e.shelf = "Keep it under 40 characters.";
 
   if (!/^\d+$/.test(String(f.copies).trim()) || +f.copies < 1 || +f.copies > 99) e.copies = "Enter a whole number from 1 to 99.";
 
@@ -339,6 +348,9 @@ function BookFormModal({ book, books = [], onClose, onSave }) {
           subcategory: book.subcategory || "",
           published: book.published, description: book.description || "", image: isData ? "" : book.image || "",
           copies: String(book.copies ?? 1),
+          isbn: book.isbn || "",
+          pages: book.pages ? String(book.pages) : "",
+          shelf: book.shelf || "",
         }
       : EMPTY_FORM
   );
@@ -388,7 +400,10 @@ function BookFormModal({ book, books = [], onClose, onSave }) {
   const submit = async (e) => {
     e.preventDefault();
     setTouched(Object.fromEntries(Object.keys(EMPTY_FORM).map((k) => [k, true])));
-    if (Object.keys(errors).length) return;
+    if (Object.keys(errors).length) {
+      setSubmitError(`Fix these fields: ${Object.keys(errors).join(", ")}.`);
+      return;
+    }
 
     setSaving(true);
     setSubmitError("");
@@ -403,6 +418,9 @@ function BookFormModal({ book, books = [], onClose, onSave }) {
         description: form.description.trim(),
         image: upload ? upload.data : form.image.trim(),
         copies: Number(form.copies),
+        isbn: form.isbn.replace(/[\s-]/g, "").toUpperCase(),
+        pages: Number(form.pages),
+        shelf: form.shelf.trim(),
       });
     } catch (err) {
       setSubmitError(err.message);
@@ -425,6 +443,15 @@ function BookFormModal({ book, books = [], onClose, onSave }) {
           </Field>
           <Field label="Publisher" error={err("publisher")}>
             <input type="text" placeholder="Enter a Publisher Name" {...bind("publisher")} />
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+          <Field label="ISBN" error={err("isbn")}>
+            <input type="text" placeholder="e.g. 978-0-547-92822-7" {...bind("isbn")} />
+          </Field>
+          <Field label="Number of Pages" error={err("pages")}>
+            <input type="number" min="1" max="10000" placeholder="e.g. 310" {...bind("pages")} />
           </Field>
         </div>
 
@@ -462,7 +489,7 @@ function BookFormModal({ book, books = [], onClose, onSave }) {
         </Field>
 
         <Field
-          label="Description"
+          label="Description (optional)"
           error={err("description")}
           counter={
             <span className={`ml-auto whitespace-nowrap text-[11.5px] ${full ? "font-bold text-[#c0121f]" : "font-normal text-gray-500"}`}>
@@ -478,9 +505,14 @@ function BookFormModal({ book, books = [], onClose, onSave }) {
           />
         </Field>
 
-        <Field label="Number of Copies" error={err("copies")}>
-          <input type="number" min="1" max="99" placeholder="e.g. 3" {...bind("copies")} />
-        </Field>
+        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+          <Field label="Total Copies" error={err("copies")}>
+            <input type="number" min="1" max="99" placeholder="e.g. 3" {...bind("copies")} />
+          </Field>
+          <Field label="Shelf / Location (optional)" error={err("shelf")}>
+            <input type="text" maxLength={40} placeholder="e.g. Aisle 3, Shelf B" {...bind("shelf")} />
+          </Field>
+        </div>
 
         <Field label="Image Upload" error={fileError || err("image")}>
           <div className="flex gap-2">
@@ -606,11 +638,11 @@ const buildNotifications = (transactions, books, requests = []) => {
 };
 
 // ---------- CSV import ----------
-const CSV_TEMPLATE = `title,author,publisher,category,published,copies,description,image,subcategory
-The Hobbit,J.R.R. Tolkien,Allen & Unwin,Fiction,1937-09-21,3,A hobbit goes on an unexpected adventure.,,Fantasy
-A Brief History of Time,Stephen Hawking,Bantam Books,Non-Fiction,1988-04-01,2,An introduction to cosmology for general readers.,https://example.com/cover.jpg,Cosmology
+const CSV_TEMPLATE = `title,author,isbn,publisher,category,published,copies,pages,description,image,subcategory,shelf
+The Hobbit,J.R.R. Tolkien,9780547928227,Allen & Unwin,Fiction,1937-09-21,3,310,A hobbit goes on an unexpected adventure.,,Fantasy,Aisle 1
+A Brief History of Time,Stephen Hawking,9780553380163,Bantam Books,Non-Fiction,1988-04-01,2,212,An introduction to cosmology for general readers.,https://example.com/cover.jpg,Cosmology,Aisle 4
 `;
-const REQUIRED_COLS = ["title", "author", "publisher", "category", "published", "description"];
+const REQUIRED_COLS = ["title", "author", "isbn", "publisher", "category", "published", "pages"];
 const MAX_IMPORT_ROWS = 500;
 
 const parseCsv = (input) => {
@@ -640,6 +672,8 @@ const readImport = (text, existing) => {
     if (k === "totalcopies" || k === "numberofcopies") k = "copies";
     if (k === "imageurl" || k === "imagelink") k = "image";
     if (k === "datepublished") k = "published";
+    if (k === "numberofpages") k = "pages";
+    if (k === "shelf/location" || k === "location") k = "shelf";
     head[k] = i;
   });
   const missing = REQUIRED_COLS.filter((k) => !(k in head));
@@ -655,6 +689,7 @@ const readImport = (text, existing) => {
       title: cell(r, "title"), author: cell(r, "author"), publisher: cell(r, "publisher"),
       category: cat || "", subcategory: cell(r, "subcategory"), published: cell(r, "published"), description: cell(r, "description"),
       image: cell(r, "image"), copies: cell(r, "copies") || "1",
+      isbn: cell(r, "isbn"), pages: cell(r, "pages"), shelf: cell(r, "shelf"),
     };
     const e = validate(form);
     if (!cat) e.category = `Category must be one of: ${CATEGORIES.join(", ")}.`;
@@ -698,8 +733,8 @@ function ImportModal({ books, onClose, onDone }) {
     setBusy(true);
     let n = 0;
     for (const r of good) {
-      const { copies, ...rest } = r.form;
-      try { await api("", { method: "POST", body: JSON.stringify({ ...rest, copies: Number(copies) }) }); n++; } catch { /* skipped */ }
+      const { copies, pages, ...rest } = r.form;
+      try { await api("", { method: "POST", body: JSON.stringify({ ...rest, isbn: rest.isbn.replace(/[\s-]/g, "").toUpperCase(), copies: Number(copies), pages: Number(pages) }) }); n++; } catch { /* skipped */ }
     }
     const skipped = rows.length - n;
     onDone(`Imported ${n} ${n === 1 ? "book" : "books"}${skipped > 0 ? ` (${skipped} skipped)` : ""}.`);
@@ -885,47 +920,101 @@ function NotificationsModal({ notes, onClose }) {
 }
 
 // ---------- Overview ----------
-function Overview({ books, transactions, students, pending = 0, onAction, onStat }) {
-  const outstanding = transactions.filter((t) => t.fine > 0 && !t.finePaid).reduce((s, t) => s + t.fine, 0);
+const sectionTitle = "mb-3 border-b border-[#eea51c]/60 pb-1 text-xl font-bold text-[#4a1f1f]";
+
+function BorrowChart({ transactions }) {
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const iso = new Date(Date.now() - (6 - i) * 86400000).toISOString().slice(0, 10);
+    return {
+      iso,
+      label: new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" }),
+      borrowed: transactions.filter((t) => t.borrowedOn === iso).length,
+      returned: transactions.filter((t) => t.returned === iso).length,
+    };
+  });
+  const max = Math.max(1, ...days.flatMap((d) => [d.borrowed, d.returned]));
+  const MAX_H = 44;
+  const h = (n) => (n === 0 ? 3 : Math.max(6, Math.round((n / max) * MAX_H)));
+  const totalB = days.reduce((s, d) => s + d.borrowed, 0);
+  const totalR = days.reduce((s, d) => s + d.returned, 0);
+
+  const Bar = ({ n, color }) => (
+    <div className="flex flex-col items-center justify-end gap-0.5">
+      <span className="text-[10px] font-bold leading-none" style={{ color, opacity: n ? 1 : 0 }}>{n}</span>
+      <div className="w-3.5 rounded-t-sm" style={{ height: h(n), background: color, opacity: n ? 1 : 0.2 }} />
+    </div>
+  );
+
+  return (
+    <div className="rounded-xl border border-[#4a1f1f]/20 bg-[#faf6f0] px-4 py-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex gap-4 font-semibold text-[#1b1b1b]">
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#4a1f1f]" />Borrowed ({totalB})</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#0c7a43]" />Returned ({totalR})</span>
+        </div>
+        <span className="text-gray-500">Last 7 days</span>
+      </div>
+      <div className="grid grid-cols-7 gap-2 border-t border-[#4a1f1f]/10 pt-2">
+        {days.map((d) => (
+          <div key={d.iso} className="flex flex-col items-center gap-1" title={`${d.label}: ${d.borrowed} borrowed, ${d.returned} returned`}>
+            <div className="flex h-[62px] items-end gap-1">
+              <Bar n={d.borrowed} color="#4a1f1f" />
+              <Bar n={d.returned} color="#0c7a43" />
+            </div>
+            <span className="text-[11px] font-semibold text-gray-500">{d.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Overview({ books, transactions, requests, onAction, onStat }) {
+  const active = transactions.filter((t) => !isReturned(t));
+  const overdue = active.filter((t) => t.overdue).sort((a, b) => b.daysOverdue - a.daysOverdue);
+  const dueToday = active.filter((t) => isToday(t.due)).length;
+
   const stats = [
-    ["Total Books", books.length, "bg-[#e4f1ee]"],
-    ["Borrowed", transactions.filter((t) => !isReturned(t)).length, "bg-[#dedaf4]"],
-    ["Overdue", transactions.filter((t) => t.overdue).length, "bg-[#ffadad]"],
-    ["Available", books.reduce((s, b) => s + copiesLeft(b), 0), "bg-[#ffd6a5]"],
-    ["Students", students.length, "bg-[#d7ecff]"],
-    ["Fines Due", `₱${outstanding.toFixed(0)}`, "bg-[#f6d6e8]"],
+    ["Total Book Copies", books.reduce((s, b) => s + (b.totalCopies ?? 1), 0), "bg-[#e4f1ee]"],
+    ["Available Copies", books.reduce((s, b) => s + copiesLeft(b), 0), "bg-[#ffd6a5]"],
+    ["Currently Borrowed", active.length, "bg-[#dedaf4]"],
+    ["Overdue Books", overdue.length, "bg-[#ffadad]"],
+    ["Pending Requests", requests.length, "bg-[#fff1c2]"],
+    ["Due Today", dueToday, "bg-[#d7ecff]"],
   ];
-  const borrowedToday = transactions.filter((t) => isToday(t.borrowedOn)).length;
-  const returnedToday = transactions.filter((t) => isReturned(t) && isToday(t.returned)).length;
-  const recent = transactions.slice(0, 5);
-  const actions = [["issue", "Issue"], ["add", "Add Book"], ["import", "Import"]];
-  const h = "mb-3 border-b border-[#eea51c]/60 pb-1 text-xl font-bold text-[#4a1f1f]";
+
+  const actions = [
+    ["issue", "Borrowing", "Issue a book to a student", "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2zM12 7v6M9 10h6"],
+    ["returns", "Returns", "Mark books as returned", "M9 14 4 9l5-5M20 20v-7a4 4 0 0 0-4-4H4"],
+    ["catalog", "Catalog", "Add and manage books", "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"],
+    ["history", "History", "View all transactions", "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2"],
+  ];
 
   return (
     <>
-      <p className="mb-3 text-sm italic text-gray-500">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
-      <div className="mb-8 grid grid-cols-3 gap-3">
-        {actions.map(([k, label]) => (
-          <button key={k} onClick={() => onAction(k)} className="cursor-pointer rounded-xl border border-[#eea51c] bg-[#4a1f1f] py-3 text-sm font-semibold text-white hover:opacity-90">{label}</button>
+      <h2 className={sectionTitle}>Quick Actions</h2>
+      <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {actions.map(([k, label, sub, icon]) => (
+          <button
+            key={k}
+            onClick={() => onAction(k)}
+            className="group flex cursor-pointer items-center gap-3 rounded-xl border border-[#4a1f1f]/15 bg-[#faf6f0] p-3 text-left transition hover:-translate-y-0.5 hover:border-[#eea51c] hover:shadow-md"
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#4a1f1f] text-[#eea51c] transition group-hover:bg-[#eea51c] group-hover:text-[#4a1f1f]">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d={icon} />
+              </svg>
+            </span>
+            <span className="min-w-0 flex-1">
+              <strong className="block text-sm text-[#4a1f1f]">{label}</strong>
+              <span className="block truncate text-xs text-gray-600">{sub}</span>
+            </span>
+            <span className="text-xl leading-none text-[#4a1f1f]/40 transition group-hover:translate-x-0.5 group-hover:text-[#4a1f1f]" aria-hidden="true">›</span>
+          </button>
         ))}
       </div>
 
-      {pending > 0 && (
-        <button
-          onClick={() => onAction("requests")}
-          className="mb-8 flex w-full cursor-pointer items-center justify-between rounded-xl border border-[#eea51c]/70 bg-[#eea51c]/15 px-4 py-3.5 text-left hover:bg-[#eea51c]/25"
-        >
-          <span>
-            <strong className="block text-sm">
-              {pending === 1 ? "1 request waiting for approval" : `${pending} requests waiting for approval`}
-            </strong>
-            <span className="text-xs text-gray-600">Click to approve or decline</span>
-          </span>
-          <span className="text-xl text-[#4a1f1f]">›</span>
-        </button>
-      )}
-
-      <h2 className={h}>Library at a Glance</h2>
+      <h2 className={sectionTitle}>Library at a Glance</h2>
       <section className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
         {stats.map(([label, value, bg]) => (
           <button key={label} onClick={() => onStat(label)} className={`flex cursor-pointer flex-col gap-1.5 rounded-xl border-0 px-[18px] py-3.5 text-left hover:opacity-90 ${bg}`}>
@@ -935,28 +1024,61 @@ function Overview({ books, transactions, students, pending = 0, onAction, onStat
         ))}
       </section>
 
-      <h2 className={h}>Today's Summary</h2>
-      <div className="mb-8 grid grid-cols-2 gap-4">
-        <div className="rounded-xl border border-[#4a1f1f]/40 bg-[#4a1f1f]/10 p-4"><strong className="block text-2xl text-[#4a1f1f]">{borrowedToday}</strong><span className="text-xs font-semibold">Borrowed today</span></div>
-        <div className="rounded-xl border border-[#0c7a43]/40 bg-[#0c7a43]/10 p-4"><strong className="block text-2xl text-[#0c7a43]">{returnedToday}</strong><span className="text-xs font-semibold">Returned today</span></div>
+      <h2 className={sectionTitle}>Borrowing Activity</h2>
+      <div className="mb-8"><BorrowChart transactions={transactions} /></div>
+
+      <div className="mb-8 grid gap-8 md:grid-cols-2">
+        <section>
+          <div className="mb-3 flex items-end justify-between border-b border-[#eea51c]/60 pb-1">
+            <h2 className="text-xl font-bold text-[#4a1f1f]">Pending Requests</h2>
+            {requests.length > 0 && (
+              <button onClick={() => onAction("requests")} className="cursor-pointer border-0 bg-transparent text-xs font-bold text-[#0b4a8b] hover:underline">View all</button>
+            )}
+          </div>
+          {requests.length === 0 ? (
+            <p className="rounded-xl bg-[#faf6f0] p-4 text-sm font-semibold text-[#0c7a43]">No requests waiting for approval.</p>
+          ) : (
+            <div className="rounded-xl border border-[#4a1f1f]/20">
+              {requests.slice(0, 4).map((r) => (
+                <div key={r.id} className="flex items-center gap-3 border-b border-[#4a1f1f]/10 px-4 py-3 last:border-b-0">
+                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: TONES.amber }} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-bold">{r.title}</div>
+                    <div className="truncate text-xs text-gray-600">{r.borrower} · {fmt(r.requestedOn)}</div>
+                  </div>
+                  <button className={`${btnSmall} py-1.5`} onClick={() => onAction("requests")}>Review</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section>
+          <div className="mb-3 flex items-end justify-between border-b border-[#eea51c]/60 pb-1">
+            <h2 className="text-xl font-bold text-[#4a1f1f]">Overdue Books</h2>
+            {overdue.length > 0 && (
+              <button onClick={() => onAction("overdue")} className="cursor-pointer border-0 bg-transparent text-xs font-bold text-[#0b4a8b] hover:underline">View all</button>
+            )}
+          </div>
+          {overdue.length === 0 ? (
+            <p className="rounded-xl bg-[#faf6f0] p-4 text-sm font-semibold text-[#0c7a43]">Nothing is overdue.</p>
+          ) : (
+            <div className="rounded-xl border border-[#4a1f1f]/20">
+              {overdue.slice(0, 4).map((t) => (
+                <div key={t.id} className="flex items-center gap-3 border-b border-[#4a1f1f]/10 px-4 py-3 last:border-b-0">
+                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: TONES.red }} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-bold">{t.title}</div>
+                    <div className="truncate text-xs text-gray-600">{t.borrower} · {t.daysOverdue} {t.daysOverdue === 1 ? "day" : "days"} late</div>
+                  </div>
+                  <span className="text-xs font-bold text-[#c0121f]">{peso(t.fine)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
-      <h2 className={h}>Recent Activity</h2>
-      {recent.length === 0 ? (
-        <p className="rounded-xl bg-[#faf6f0] p-4 text-sm font-semibold">No loans recorded yet.</p>
-      ) : (
-        <div className="rounded-xl border border-[#4a1f1f]/20">
-          {recent.map((t) => (
-            <div key={t.id} className="flex items-center gap-3 border-b border-[#4a1f1f]/10 px-4 py-3 last:border-b-0">
-              <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: t.overdue ? TONES.red : isReturned(t) ? TONES.green : TONES.amber }} />
-              <div className="min-w-0">
-                <div className="truncate text-sm font-bold">{t.title}</div>
-                <div className="truncate text-xs text-gray-600">{t.borrower} · {isReturned(t) ? `Returned ${fmt(t.returned)}` : `Borrowed ${fmt(t.borrowedOn)}`}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </>
   );
 }
@@ -1602,22 +1724,25 @@ export default function HomeLibrarian() {
   const openStudent = students.find((s) => s.email === studentEmail);
 
   const goStat = (label) => {
-    if (label === "Total Books") setTab("books");
-    else if (label === "Available") { setBookSort({ key: "status", dir: "asc" }); setTab("books"); }
-    else if (label === "Students") { setTab("borrowers"); setBorrowerView("lookup"); }
+    if (label === "Total Book Copies") setTab("books");
+    else if (label === "Available Copies") { setBookSort({ key: "status", dir: "asc" }); setTab("books"); }
+    else if (label === "Pending Requests") setTab("requests");
     else {
       setTab("borrowers");
       setBorrowerView("transactions");
-      setStatusFilter(label === "Borrowed" ? "Not Returned" : label === "Overdue" ? "Overdue" : "All Statuses");
+      setStatusFilter(label === "Overdue Books" ? "Overdue" : "Not Returned");
     }
   };
 
   const onAction = (k) => {
     if (k === "issue") setIssueCtx({});
-    else if (k === "add") setShowModal(true);
-    else if (k === "import") setShowImport(true);
     else if (k === "requests") setTab("requests");
-    else if (k === "requests") setTab("requests");
+    else if (k === "catalog") { setBookSort({ key: "title", dir: "asc" }); setTab("books"); }
+    else if (k === "returns" || k === "history" || k === "overdue") {
+      setTab("borrowers");
+      setBorrowerView("transactions");
+      setStatusFilter(k === "returns" ? "Not Returned" : k === "overdue" ? "Overdue" : "All Statuses");
+    }
     else { setTab("borrowers"); setBorrowerView("lookup"); }
   };
 
@@ -1631,14 +1756,18 @@ export default function HomeLibrarian() {
       <Navbar role="librarian" notificationCount={unseen} onNotifications={openNotes} />
 
       <main className="mx-auto w-full max-w-[1100px] flex-1 p-6">
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-[26px] font-bold md:text-[34px]">
-              {greeting()}, {profile?.firstName?.trim() || "Librarian"}
-            </h1>
-            <p className="text-sm italic text-gray-500">Keeper of the Hogwarts Library</p>
+        {tab === "overview" && (
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div>
+              <h1 className="text-[26px] font-bold md:text-[34px]">
+                {greeting()}, {profile?.firstName?.trim() || "Librarian"}
+              </h1>
+              <p className="text-sm italic text-gray-500">
+                {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         <nav className="mb-6 flex gap-1 border-b border-[#d8d8d8]" aria-label="Sections">
           {TABS.map(([k, label]) => (
@@ -1667,7 +1796,7 @@ export default function HomeLibrarian() {
         )}
 
         {tab === "overview" && (
-          <Overview books={books} transactions={transactions} students={students} pending={requests.length} onAction={onAction} onStat={goStat} />
+          <Overview books={books} transactions={transactions} requests={requests} onAction={onAction} onStat={goStat} />
         )}
 
         {tab === "requests" && <RequestsTab requests={requests} books={books} onDecide={decide} />}

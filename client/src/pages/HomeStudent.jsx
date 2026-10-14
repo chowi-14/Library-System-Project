@@ -44,6 +44,11 @@ const toStudentBook = (b) => ({
   cover: b.image || undefined,
   description: b.description,
   status: b.status,
+  publisher: b.publisher || "",
+  isbn: b.isbn || "",
+  pages: b.pages || null,
+  copies: b.copies ?? 1,
+  shelf: b.shelf || "",
 });
 
 
@@ -240,14 +245,22 @@ function BookModal({ book, mode, alreadyBorrowed, alreadyRequested, isFavorite, 
             <p className="mt-1 text-base text-gray-500">by {book.author}</p>
 
             <dl className="mt-6 grid grid-cols-2 gap-4 rounded-2xl bg-gray-50 p-4 text-sm">
-              <div>
-                <dt className="text-xs font-semibold uppercase tracking-wide text-gray-400">Released</dt>
-                <dd className="mt-0.5 font-semibold">{book.released ? fmt(book.released) : "Unknown"}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-semibold uppercase tracking-wide text-gray-400">Category</dt>
-                <dd className="mt-0.5 font-semibold">{category?.label ?? "Uncategorized"}</dd>
-              </div>
+              {[
+                ["Released", book.released ? fmt(book.released) : "Unknown"],
+                ["Category", `${category?.label ?? "Uncategorized"}${book.subcategory ? ` · ${book.subcategory}` : ""}`],
+                ["Publisher", book.publisher],
+                ["ISBN", book.isbn],
+                ["Pages", book.pages],
+                ["Total copies", book.copies],
+                ["Shelf / Location", book.shelf],
+              ]
+                .filter(([, value]) => value !== "" && value != null)
+                .map(([label, value]) => (
+                  <div key={label} className="min-w-0">
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-gray-400">{label}</dt>
+                    <dd className="mt-0.5 break-words font-semibold">{value}</dd>
+                  </div>
+                ))}
             </dl>
 
             <div className="mt-6">
