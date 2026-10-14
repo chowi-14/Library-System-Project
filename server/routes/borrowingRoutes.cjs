@@ -126,6 +126,7 @@ router.get('/borrowers', auth, requireLibrarian, async (_req, res) => {
                     id: u._id,
                     role: u.role,
                     email: u.email,
+                    avatar: u.avatar ?? null,
                     firstName: p?.firstname ?? '',
                     lastName: p?.lastname ?? '',
                     phone_number: p?.phone_number ?? '',

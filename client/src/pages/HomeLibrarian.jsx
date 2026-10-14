@@ -5,7 +5,7 @@ import crest from "../assets/crest.webp";
 
 const API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/books`;
 const BORROW_API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/borrowings`;
-const ROWS_PER_PAGE = 5;
+const ROWS_PER_PAGE = 10;
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5001/api";
 const AUTH_API = `${BASE}/auth`;
 // Keep these in sync with LibraryService
@@ -29,14 +29,14 @@ const api = async (path = "", options = {}, base = API) => {
 };
 
 
-const selectSm = "rounded-md border border-[#2b2b2b] bg-white px-2.5 py-[7px] text-[13px]";
+const selectSm = "rounded-lg border border-[#4a1f1f]/25 bg-white px-3 py-2 text-[13px] focus:border-[#4a1f1f] focus:outline-none focus:ring-2 focus:ring-[#eea51c]/40";
 const inputBase =
-  "block w-full rounded border bg-white px-2.5 py-2 text-[13px] font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0b4a8b]";
-const btnBase = "cursor-pointer rounded-sm px-3 py-[9px] text-[13px] font-bold disabled:cursor-not-allowed disabled:opacity-60";
-const btnPrimary = `${btnBase} border border-[#eea51c] bg-[#eea51c] text-white hover:bg-[#d8940f]`;
-const btnSecondary = `${btnBase} border border-[#2b2b2b] bg-white text-[#1b1b1b] hover:bg-gray-100`;
-const btnDanger = `${btnBase} border border-[#c0121f] bg-[#c0121f] text-white hover:bg-[#9c0e19]`;
-const btnSmall = "cursor-pointer rounded-sm border border-[#2b2b2b] bg-white px-3.5 text-xs font-bold text-[#1b1b1b] hover:bg-gray-100";
+  "block w-full rounded-lg border bg-white px-3 py-2.5 text-[13px] font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#eea51c]/50";
+const btnBase = "cursor-pointer rounded-lg px-4 py-2.5 text-[13px] font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#eea51c]/60 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
+const btnPrimary = `${btnBase} border border-[#eea51c] bg-[#eea51c] text-[#3a1717] shadow-sm hover:bg-[#d8940f]`;
+const btnSecondary = `${btnBase} border border-[#4a1f1f]/25 bg-white text-[#4a1f1f] hover:bg-[#faf6f0]`;
+const btnDanger = `${btnBase} border border-[#c0121f] bg-[#c0121f] text-white shadow-sm hover:bg-[#9c0e19]`;
+const btnSmall = "cursor-pointer rounded-md border border-[#4a1f1f]/25 bg-white px-3.5 py-1.5 text-xs font-semibold text-[#4a1f1f] transition hover:bg-[#faf6f0] disabled:cursor-not-allowed disabled:opacity-50";
 
 function SortableTable({ columns, rows, defaultSort, emptyText, resetKey }) {
   const [sort, setSort] = useState(defaultSort);
@@ -96,16 +96,16 @@ function SortableTable({ columns, rows, defaultSort, emptyText, resetKey }) {
         </select>
       </div>
 
-      <div className="overflow-x-auto rounded-[10px] border border-[#2b2b2b]">
+      <div className="overflow-x-auto rounded-xl border border-[#4a1f1f]/15 bg-white shadow-sm">
         <table className="w-full border-collapse text-[13px]">
-          <thead>
+          <thead className="bg-[#faf6f0]">
             <tr>
               {columns.map((c) => {
                 const active = sort.key === c.key;
                 return (
                   <th
                     key={c.key}
-                    className="whitespace-nowrap border-b border-[#d8d8d8] px-2.5 py-3 text-center font-semibold"
+                    className="whitespace-nowrap border-b border-[#4a1f1f]/15 px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide text-[#4a1f1f]"
                     aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
                   >
                     {c.sortable ? (
@@ -128,7 +128,7 @@ function SortableTable({ columns, rows, defaultSort, emptyText, resetKey }) {
           </thead>
           <tbody>
             {pageRows.map((row) => (
-              <tr key={row.id} className="border-b border-[#eee] last:border-b-0 hover:bg-[#faf6f0]">
+              <tr key={row.id} className="border-b border-[#4a1f1f]/10 transition-colors last:border-b-0 hover:bg-[#faf6f0]">
                 {columns.map((c) => (
                   <td key={c.key} className="px-2.5 py-3 text-center">{c.render ? c.render(row) : row[c.key]}</td>
                 ))}
@@ -196,18 +196,30 @@ const Cover = ({ colors = ["#4a1f1f", "#eea51c"], image }) => {
   );
 };
 
+const Avatar = ({ src, name = "", className = "h-10 w-10" }) => {
+  const [failed, setFailed] = useState(false);
+  if (src && !failed) {
+    return <img src={src} alt="" className={`${className} shrink-0 rounded-full object-cover`} onError={() => setFailed(true)} />;
+  }
+  return (
+    <span className={`${className} flex shrink-0 items-center justify-center rounded-full bg-[#4a1f1f] font-bold text-white`}>
+      {name.charAt(0).toUpperCase() || "?"}
+    </span>
+  );
+};
+
 const BADGE_COLORS = {
-  overdue: "bg-[#c0121f]",
-  available: "bg-[#0c7a43]",
-  returned: "bg-[#0c7a43]",
-  "not-returned": "bg-[#eea51c]",
-  borrowed: "bg-[#eea51c]",
+  overdue: "bg-[#c0121f]/10 text-[#c0121f] ring-[#c0121f]/30",
+  available: "bg-[#0c7a43]/10 text-[#0c7a43] ring-[#0c7a43]/30",
+  returned: "bg-[#0c7a43]/10 text-[#0c7a43] ring-[#0c7a43]/30",
+  "not-returned": "bg-[#eea51c]/15 text-[#8a5a00] ring-[#eea51c]/40",
+  borrowed: "bg-[#eea51c]/15 text-[#8a5a00] ring-[#eea51c]/40",
 };
 
 const Badge = ({ status, overdue }) => {
   const kind = overdue ? "overdue" : status.toLowerCase().replace(" ", "-");
   return (
-    <span className={`inline-block rounded-full px-2.5 py-[3px] text-[11px] font-bold text-white ${BADGE_COLORS[kind]}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${BADGE_COLORS[kind]}`}>
       {status}
     </span>
   );
@@ -292,19 +304,24 @@ const validate = (f) => {
 };
 
 function Modal({ title, titleId, onClose, small, role = "dialog", describedBy, children }) {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
   return (
     <div
-      className="fixed inset-0 z-50 flex overflow-y-auto bg-black/[.55] px-4 py-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className={`m-auto w-full bg-white shadow-[0_10px_40px_rgba(0,0,0,0.35)] ${small ? "max-w-[380px]" : "max-w-[430px]"}`}
+        className={`flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ${small ? "max-w-[380px]" : "max-w-[430px]"}`}
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={describedBy}
       >
-        <div className="flex items-center justify-between bg-[#4a1f1f] px-[22px] py-4 text-white">
+        <div className="flex shrink-0 items-center justify-between bg-[#4a1f1f] px-[22px] py-4 text-white">
           <h2 id={titleId} className="text-lg font-bold">{title}</h2>
           <button
             type="button"
@@ -315,7 +332,7 @@ function Modal({ title, titleId, onClose, small, role = "dialog", describedBy, c
             ×
           </button>
         </div>
-        {children}
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
       </div>
     </div>
   );
@@ -818,6 +835,33 @@ function IssueModal({ students, books, transactions, initial, onClose, onIssue }
             {books.map((b) => <option key={b.id} value={b.id}>{b.title} ({copiesLeft(b)} left)</option>)}
           </select>
         </Field>
+        {book && (
+          <div className="flex gap-3 rounded-xl border border-[#4a1f1f]/20 bg-[#faf6f0] p-3 text-[13px]">
+            <div className="shrink-0"><Cover colors={book.cover} image={book.image} /></div>
+            <div className="min-w-0 flex-1">
+              <strong className="block">{book.title}</strong>
+              <span className="block text-gray-600">by {book.author}</span>
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                {[
+                  ["Category", `${book.category}${book.subcategory ? ` · ${book.subcategory}` : ""}`],
+                  ["Publisher", book.publisher],
+                  ["ISBN", book.isbn],
+                  ["Pages", book.pages],
+                  ["Shelf / Location", book.shelf],
+                  ["Available", `${copiesLeft(book)} of ${book.totalCopies ?? 1}`],
+                ]
+                  .filter(([, value]) => value !== "" && value != null)
+                  .map(([label, value]) => (
+                    <div key={label} className="min-w-0">
+                      <dt className="text-gray-500">{label}</dt>
+                      <dd className="break-words font-semibold">{value}</dd>
+                    </div>
+                  ))}
+              </dl>
+              {book.description && <p className="mt-2 text-xs leading-relaxed text-gray-700">{book.description}</p>}
+            </div>
+          </div>
+        )}
         {student && <p className="text-[13px] font-semibold">Borrowing limit: {activeCount}/{MAX_LOANS} books</p>}
         {problem && <p className="text-[13px] font-semibold text-[#c0121f]">{problem}</p>}
         {ready && (
@@ -854,10 +898,62 @@ function StudentModal({ student, transactions, onClose, onIssue, onReturn, onPay
   const cur = Math.min(page, pages);
   const shown = records.slice((cur - 1) * size, cur * size);
 
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
   return (
-    <Modal title={student.fullName} titleId="student-title" onClose={onClose}>
-      <div className="flex flex-col gap-3 px-6 pt-[22px] pb-[26px] text-[13px]">
-        <p className="text-gray-500">{student.email} · {student.phone}</p>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="student-title"
+        className="relative w-full max-w-[430px] overflow-hidden rounded-2xl bg-white shadow-2xl"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-4 top-4 z-10 cursor-pointer rounded-full border-0 bg-black/5 p-1.5 text-gray-700 transition hover:bg-black/10"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+
+        <div className="max-h-[90vh] overflow-y-auto">
+      <div className="flex flex-col gap-3 px-6 pt-6 pb-[26px] text-[13px]">
+        <div className="flex items-center gap-4 pr-9">
+          <Avatar src={student.avatar} name={student.fullName} className="h-20 w-20 text-3xl" />
+          <div className="min-w-0">
+            <h2 id="student-title" className="break-words text-xl font-bold leading-tight text-[#4a1f1f]">{student.fullName}</h2>
+            <span className="mt-1 inline-block rounded-full bg-[#4a1f1f]/10 px-3 py-0.5 text-xs font-semibold capitalize text-[#4a1f1f]">{student.role}</span>
+            <p className="mt-1 break-words text-gray-500">{student.email}</p>
+          </div>
+        </div>
+        <div className="rounded-xl border border-[#4a1f1f]/20">
+          {[
+            ["ID number", student.idNumber],
+            ["Phone number", student.phone],
+            ...(student.role === "professor"
+              ? [["Department", student.department]]
+              : [["Course", student.course], ["Year level", student.yearLevel]]),
+          ].map(([label, value]) => (
+            <div key={label} className="border-b border-[#4a1f1f]/10 px-4 py-2.5 last:border-b-0">
+              <div className="text-xs text-gray-500">{label}</div>
+              <div className="font-semibold">{value || "-"}</div>
+            </div>
+          ))}
+        </div>
         <div className={`rounded-lg p-3 font-semibold ${problem ? "bg-[#c0121f]/10 text-[#c0121f]" : "bg-[#0c7a43]/10 text-[#0c7a43]"}`}>
           {problem || "Eligible to borrow"}
         </div>
@@ -889,8 +985,10 @@ function StudentModal({ student, transactions, onClose, onIssue, onReturn, onPay
             <Pagination page={cur} totalPages={pages} onChange={setPage} />
           </>
         )}
+        </div>
+        </div>
       </div>
-    </Modal>
+    </div>
   );
 }
 
@@ -920,7 +1018,7 @@ function NotificationsModal({ notes, onClose }) {
 }
 
 // ---------- Overview ----------
-const sectionTitle = "mb-3 border-b border-[#eea51c]/60 pb-1 text-xl font-bold text-[#4a1f1f]";
+const sectionTitle = "mb-4 text-lg font-bold tracking-tight text-[#4a1f1f]";
 
 function BorrowChart({ transactions }) {
   const days = Array.from({ length: 7 }, (_, i) => {
@@ -998,7 +1096,7 @@ function Overview({ books, transactions, requests, onAction, onStat }) {
           <button
             key={k}
             onClick={() => onAction(k)}
-            className="group flex cursor-pointer items-center gap-3 rounded-xl border border-[#4a1f1f]/15 bg-[#faf6f0] p-3 text-left transition hover:-translate-y-0.5 hover:border-[#eea51c] hover:shadow-md"
+            className="group flex cursor-pointer items-center gap-3 rounded-2xl border border-[#4a1f1f]/15 bg-[#faf6f0] p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#eea51c] hover:shadow-md"
           >
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#4a1f1f] text-[#eea51c] transition group-hover:bg-[#eea51c] group-hover:text-[#4a1f1f]">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1017,9 +1115,9 @@ function Overview({ books, transactions, requests, onAction, onStat }) {
       <h2 className={sectionTitle}>Library at a Glance</h2>
       <section className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
         {stats.map(([label, value, bg]) => (
-          <button key={label} onClick={() => onStat(label)} className={`flex cursor-pointer flex-col gap-1.5 rounded-xl border-0 px-[18px] py-3.5 text-left hover:opacity-90 ${bg}`}>
-            <span className="text-[13px] font-semibold">{label}</span>
-            <strong className="text-[30px] font-bold">{value}</strong>
+          <button key={label} onClick={() => onStat(label)} className={`flex cursor-pointer flex-col gap-1 rounded-2xl border border-black/5 px-5 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${bg}`}>
+            <span className="text-xs font-semibold uppercase tracking-wide text-[#1b1b1b]/70">{label}</span>
+            <strong className="text-3xl font-bold tabular-nums">{value}</strong>
           </button>
         ))}
       </section>
@@ -1030,7 +1128,7 @@ function Overview({ books, transactions, requests, onAction, onStat }) {
       <div className="mb-8 grid gap-8 md:grid-cols-2">
         <section>
           <div className="mb-3 flex items-end justify-between border-b border-[#eea51c]/60 pb-1">
-            <h2 className="text-xl font-bold text-[#4a1f1f]">Pending Requests</h2>
+            <h2 className="text-lg font-bold tracking-tight text-[#4a1f1f]">Pending Requests</h2>
             {requests.length > 0 && (
               <button onClick={() => onAction("requests")} className="cursor-pointer border-0 bg-transparent text-xs font-bold text-[#0b4a8b] hover:underline">View all</button>
             )}
@@ -1041,7 +1139,7 @@ function Overview({ books, transactions, requests, onAction, onStat }) {
             <div className="rounded-xl border border-[#4a1f1f]/20">
               {requests.slice(0, 4).map((r) => (
                 <div key={r.id} className="flex items-center gap-3 border-b border-[#4a1f1f]/10 px-4 py-3 last:border-b-0">
-                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: TONES.amber }} />
+                  <div className="shrink-0"><Cover colors={r.cover} image={books.find((b) => b.id === r.bookId)?.image} /></div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-bold">{r.title}</div>
                     <div className="truncate text-xs text-gray-600">{r.borrower} · {fmt(r.requestedOn)}</div>
@@ -1055,7 +1153,7 @@ function Overview({ books, transactions, requests, onAction, onStat }) {
 
         <section>
           <div className="mb-3 flex items-end justify-between border-b border-[#eea51c]/60 pb-1">
-            <h2 className="text-xl font-bold text-[#4a1f1f]">Overdue Books</h2>
+            <h2 className="text-lg font-bold tracking-tight text-[#4a1f1f]">Overdue Books</h2>
             {overdue.length > 0 && (
               <button onClick={() => onAction("overdue")} className="cursor-pointer border-0 bg-transparent text-xs font-bold text-[#0b4a8b] hover:underline">View all</button>
             )}
@@ -1383,7 +1481,7 @@ function DeclineModal({ request, onCancel, onConfirm }) {
 }
 
 // ---------- Borrow requests page ----------
-function RequestsTab({ requests, books, onDecide }) {
+function RequestsTab({ requests, books, students, onDecide, onViewBorrower }) {
   const [confirm, setConfirm] = useState(null); // { request, approve }
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(() => new Set());
@@ -1438,13 +1536,24 @@ function RequestsTab({ requests, books, onDecide }) {
         <div className="flex flex-col gap-2.5">
           {shown.map((r) => {
             const isBusy = busy.has(r.id);
+            const book = books.find((b) => b.id === r.bookId);
             return (
               <div key={r.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#4a1f1f]/20 bg-white p-3">
-                <Cover colors={r.cover} image={books.find((b) => b.id === r.bookId)?.image} />
+                <Cover colors={r.cover} image={book?.image} />
+                <button type="button" onClick={() => onViewBorrower(r.borrowerEmail)} aria-label={`View ${r.borrower}`} className="cursor-pointer rounded-full border-0 bg-transparent p-0">
+                  <Avatar src={students.find((s) => s.email === r.borrowerEmail)?.avatar} name={r.borrower} className="h-9 w-9" />
+                </button>
                 <div className="min-w-0 flex-1">
                   <strong className="block">{r.title}</strong>
-                  <span className="block text-[13px]">{r.borrower} ({r.borrowerEmail})</span>
+                  <button type="button" onClick={() => onViewBorrower(r.borrowerEmail)} className="block cursor-pointer border-0 bg-transparent p-0 text-left text-[13px] text-[#0b4a8b] hover:underline">
+                    {r.borrower} ({r.borrowerEmail})
+                  </button>
                   <span className="block text-xs text-gray-500">Requested {fmt(r.requestedOn)}</span>
+                  {book && (
+                    <span className={`block text-xs font-semibold ${copiesLeft(book) > 0 ? "text-[#0c7a43]" : "text-[#c0121f]"}`}>
+                      {copiesLeft(book)} of {book.totalCopies ?? 1} copies available
+                    </span>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -1489,6 +1598,7 @@ function RequestsTab({ requests, books, onDecide }) {
 export default function HomeLibrarian() {
   const [books, setBooks] = useState([]);
   const [apiError, setApiError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [toDelete, setToDelete] = useState(null);
   const [toEdit, setToEdit] = useState(null);
@@ -1537,7 +1647,8 @@ export default function HomeLibrarian() {
           })
         );
       })
-      .catch((e) => setApiError(e.message));
+      .catch((e) => setApiError(e.message))
+      .finally(() => setLoading(false));
     api("/borrowers", {}, BORROW_API)
       .then((data) =>
         setStudents(
@@ -1755,27 +1866,27 @@ export default function HomeLibrarian() {
     <div className="flex min-h-screen flex-col bg-white font-sans text-[#1b1b1b]">
       <Navbar role="librarian" notificationCount={unseen} onNotifications={openNotes} />
 
-      <main className="mx-auto w-full max-w-[1100px] flex-1 p-6">
+      <main className="mx-auto w-full max-w-[1100px] flex-1 px-4 py-6 sm:px-6 lg:py-8">
         {tab === "overview" && (
           <div className="mb-5 flex items-center justify-between gap-3">
             <div>
-              <h1 className="text-[26px] font-bold md:text-[34px]">
+              <h1 className="text-2xl font-bold tracking-tight text-[#4a1f1f] md:text-3xl">
                 {greeting()}, {profile?.firstName?.trim() || "Librarian"}
               </h1>
-              <p className="text-sm italic text-gray-500">
+              <p className="mt-0.5 text-sm text-gray-500">
                 {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
               </p>
             </div>
           </div>
         )}
 
-        <nav className="mb-6 flex gap-1 border-b border-[#d8d8d8]" aria-label="Sections">
+        <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-[#4a1f1f]/15" aria-label="Sections">
           {TABS.map(([k, label]) => (
             <button
               key={k}
               onClick={() => { if (k === "books") setBookSort({ key: "title", dir: "asc" }); setTab(k); }}
-              className={`cursor-pointer border-0 border-b-2 bg-transparent px-4 py-2.5 text-sm font-semibold ${
-                tab === k ? "border-[#4a1f1f] text-[#4a1f1f]" : "border-transparent text-gray-500 hover:text-[#4a1f1f]"
+              className={`-mb-px cursor-pointer whitespace-nowrap border-0 border-b-2 bg-transparent px-4 py-3 text-sm font-semibold transition-colors ${
+                tab === k ? "border-[#eea51c] text-[#4a1f1f]" : "border-transparent text-gray-500 hover:text-[#4a1f1f]"
               }`}
             >
               {label}
@@ -1799,7 +1910,7 @@ export default function HomeLibrarian() {
           <Overview books={books} transactions={transactions} requests={requests} onAction={onAction} onStat={goStat} />
         )}
 
-        {tab === "requests" && <RequestsTab requests={requests} books={books} onDecide={decide} />}
+        {tab === "requests" && <RequestsTab requests={requests} books={books} students={students} onDecide={decide} onViewBorrower={setStudentEmail} />}
 
         {tab === "books" && (
           <section className="mb-10">
@@ -1839,7 +1950,7 @@ export default function HomeLibrarian() {
               rows={filteredBooks}
               resetKey={query}
               defaultSort={bookSort}
-              emptyText={books.length === 0 ? "No books yet. Select + Add Book to add one." : undefined}
+              emptyText={loading ? "Loading books..." : books.length === 0 ? "No books yet. Select + Add Book to add one." : undefined}
             />
           </section>
         )}
@@ -1873,9 +1984,7 @@ export default function HomeLibrarian() {
                           onClick={() => setStudentEmail(s.email)}
                           className="flex cursor-pointer items-center gap-3 rounded-xl border border-[#4a1f1f]/20 bg-white p-3 text-left hover:bg-[#faf6f0]"
                         >
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#4a1f1f] font-bold text-white">
-                            {s.fullName.charAt(0).toUpperCase()}
-                          </span>
+                          <Avatar src={s.avatar} name={s.fullName} />
                           <span className="min-w-0 flex-1">
                             <strong className="block">{s.fullName}</strong>
                             <span className="block truncate text-xs text-gray-600">{s.email}</span>
@@ -1888,6 +1997,9 @@ export default function HomeLibrarian() {
                         </button>
                       );
                     })}
+                    <p className="text-center text-xs text-gray-500">
+                      Showing {(sCur - 1) * ROWS_PER_PAGE + 1}–{(sCur - 1) * ROWS_PER_PAGE + shownStudents.length} of {foundStudents.length}
+                    </p>
                     <Pagination page={sCur} totalPages={sPages} onChange={setStudentPage} />
                   </div>
                 )}
@@ -1925,7 +2037,7 @@ export default function HomeLibrarian() {
       />
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-md bg-[#1b1b1b] px-4 py-2.5 text-[13px] font-semibold text-white shadow-lg" role="status">
+        <div className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl bg-[#1b1b1b] px-5 py-3 text-sm font-medium text-white shadow-2xl ring-1 ring-white/10" role="status">
           {toast}
         </div>
       )}

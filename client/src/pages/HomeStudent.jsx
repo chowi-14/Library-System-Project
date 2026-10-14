@@ -530,7 +530,7 @@ function PromoBanner({ onAction }) {
         <div className="relative flex flex-wrap items-center justify-between gap-6">
           <div>
             <h2 className="font-serif text-3xl sm:text-4xl">
-              Borrow any available book for <span className="text-[#e9c27a]">7 days</span>.
+              Borrow any available book for <span className="text-[#e9c27a]">14 days</span>.
             </h2>
             <p className="mt-2 text-sm opacity-80">Return on time and keep your record clean. Mischief managed.</p>
           </div>
