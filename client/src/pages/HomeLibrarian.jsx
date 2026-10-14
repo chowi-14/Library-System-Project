@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Search } from "lucide-react";
 import Navbar from "../components/Navbar";
 import Pagination from "../components/Pagination";
 import crest from "../assets/crest.webp";
 import { Html5Qrcode } from "html5-qrcode";
+import {
+  AreaChart, Area,
+  BarChart, Bar,
+  LineChart as RLineChart, Line,
+  PieChart, Pie,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, Cell, ReferenceLine, LabelList,
+} from "recharts";
 
 const API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/books`;
 const BORROW_API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/borrowings`;
@@ -34,12 +43,30 @@ const selectSm = "rounded-lg border border-[#4a1f1f]/25 bg-white px-3 py-2 text-
 const inputBase =
   "block w-full rounded-lg border bg-white px-3 py-2.5 text-[13px] font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#eea51c]/50";
 const btnBase = "cursor-pointer rounded-lg px-4 py-2.5 text-[13px] font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#eea51c]/60 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
-const btnPrimary = `${btnBase} border border-[#eea51c] bg-[#eea51c] text-[#3a1717] shadow-sm hover:bg-[#d8940f]`;
+const btnPrimary = `${btnBase} border border-[#eea51c] bg-[#eea51c] text-[#FFFFFF] shadow-sm hover:bg-[#d8940f]`;
 const btnSecondary = `${btnBase} border border-[#4a1f1f]/25 bg-white text-[#4a1f1f] hover:bg-[#faf6f0]`;
 const btnDanger = `${btnBase} border border-[#c0121f] bg-[#c0121f] text-white shadow-sm hover:bg-[#9c0e19]`;
 const btnSmall = "cursor-pointer rounded-md border border-[#4a1f1f]/25 bg-white px-3.5 py-1.5 text-xs font-semibold text-[#4a1f1f] transition hover:bg-[#faf6f0] disabled:cursor-not-allowed disabled:opacity-50";
 
-function SortableTable({ columns, rows, defaultSort, emptyText, resetKey }) {
+const btnApprove = `${btnBase} border border-[#0c7a43] bg-[#0c7a43] text-white shadow-sm hover:bg-[#09653a]`;
+const btnDecline = `${btnBase} border border-[#c0121f]/30 bg-[#c0121f]/10 text-[#c0121f] hover:bg-[#c0121f]/20`;
+const btnCompact = "cursor-pointer rounded-lg px-3 py-2 text-[13px] font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#eea51c]/60 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
+const btnImport = `${btnCompact} border border-[#0c7a43] bg-[#0c7a43] text-white shadow-sm hover:bg-[#09653a]`;
+const btnAdd = `${btnCompact} border border-[#eea51c] bg-[#eea51c] text-[#FFFFFF] shadow-sm hover:bg-[#d8940f]`;
+const btnReturn = "cursor-pointer rounded-md border border-[#0c7a43] bg-[#0c7a43] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#09653a] disabled:cursor-not-allowed disabled:opacity-50";
+const btnIssue = "cursor-pointer rounded-md border border-[#eea51c] bg-[#eea51c] px-3.5 py-1.5 text-xs font-semibold text-[#FFFFFF] transition hover:bg-[#d8940f] disabled:cursor-not-allowed disabled:opacity-50";
+const btnBrowse = "cursor-pointer rounded-lg border border-[#eea51c] bg-[#eea51c] px-4 py-2 text-[13px] font-semibold text-[#FFFFFF] shadow-sm transition hover:bg-[#d8940f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#eea51c]/60";
+
+function SearchInput({ className = "", ...props }) {
+  return (
+    <div className={`relative ${className}`}>
+      <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#4a1f1f]" />
+      <input type="search" {...props} className={`${selectSm} w-full pl-9`} />
+    </div>
+  );
+}
+
+function SortableTable({ columns, rows, defaultSort, emptyText, resetKey, toolbar, filters }) {
   const [sort, setSort] = useState(defaultSort);
   const [page, setPage] = useState(1);
   const [lastKey, setLastKey] = useState(resetKey);
@@ -77,7 +104,8 @@ function SortableTable({ columns, rows, defaultSort, emptyText, resetKey }) {
 
   return (
     <>
-      <div className="mb-2 flex items-center justify-end gap-2 text-[13px]">
+      <div className={`mb-3 flex flex-wrap items-center gap-2 text-[13px] ${toolbar ? "justify-between" : "justify-end"}`}>
+        <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2">
           Sort by
           <select className={selectSm} value={sort.key} onChange={(e) => changeSort({ ...sort, key: e.target.value })}>
@@ -95,6 +123,9 @@ function SortableTable({ columns, rows, defaultSort, emptyText, resetKey }) {
           <option value="asc">A to Z</option>
           <option value="desc">Z to A</option>
         </select>
+        {filters}
+        </div>
+        {toolbar}
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-[#4a1f1f]/15 bg-white shadow-sm">
@@ -106,7 +137,7 @@ function SortableTable({ columns, rows, defaultSort, emptyText, resetKey }) {
                 return (
                   <th
                     key={c.key}
-                    className="whitespace-nowrap border-b border-[#4a1f1f]/15 px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide text-[#4a1f1f]"
+                    className={`whitespace-nowrap border-b border-[#4a1f1f]/15 px-3 py-3 text-center text-xs font-semibold tracking-wide text-[#4a1f1f] ${c.plain ? "normal-case" : "uppercase"}`}
                     aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
                   >
                     {c.sortable ? (
@@ -177,12 +208,13 @@ const TrashIcon = () => (
   </svg>
 );
 
-const Cover = ({ colors = ["#4a1f1f", "#eea51c"], image }) => {
+const Cover = ({ colors = ["#4a1f1f", "#eea51c"], image, size = "sm" }) => {
   const [failed, setFailed] = useState(false);
+  const dims = size === "lg" ? "aspect-[2/3] w-[72px] shrink-0" : "aspect-[2/3] w-[34px] shrink-0";
   if (image && !failed) {
     return (
       <img
-        className="mx-auto block h-[50px] w-[34px] rounded-[3px] object-cover"
+        className={`mx-auto block ${dims} rounded-[3px] object-cover ${size === "lg" ? "shadow-md ring-1 ring-black/10" : ""}`}
         src={image}
         alt=""
         referrerPolicy="no-referrer"
@@ -191,8 +223,11 @@ const Cover = ({ colors = ["#4a1f1f", "#eea51c"], image }) => {
     );
   }
   return (
-    <div className="relative mx-auto h-[50px] w-[34px] overflow-hidden rounded-[3px]" style={{ background: colors[0] }}>
-      <span className="absolute inset-x-1.5 bottom-2 h-1.5 rounded-sm" style={{ background: colors[1] }} />
+    <div className={`relative mx-auto ${dims} overflow-hidden rounded-[3px]`} style={{ background: colors[0] }}>
+      <span
+        className={`absolute rounded-sm ${size === "lg" ? "inset-x-3 bottom-5 h-2.5" : "inset-x-1.5 bottom-2 h-1.5"}`}
+        style={{ background: colors[1] }}
+      />
     </div>
   );
 };
@@ -306,39 +341,54 @@ const validate = (f) => {
 };
 
 let modalLocks = 0;
-function Modal({ title, titleId, onClose, small, role = "dialog", describedBy, children }) {
+
+function Modal({ title, subtitle, titleId, onClose, small, role = "dialog", describedBy, children }) {
+  const timer = useRef(null);
+
   useEffect(() => {
     modalLocks++;
     document.body.style.overflow = "hidden";
     return () => {
+      clearTimeout(timer.current);
       modalLocks--;
       if (modalLocks === 0) document.body.style.overflow = "";
     };
   }, []);
+
+  const onScroll = (e) => {
+    const el = e.currentTarget;
+    el.classList.add("is-scrolling");
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => el.classList.remove("is-scrolling"), 800);
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className={`flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ${small ? "max-w-[380px]" : "max-w-[430px]"}`}
+        className={`relative flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ${small ? "max-w-[400px]" : "max-w-[460px]"}`}
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={describedBy}
       >
-        <div className="flex shrink-0 items-center justify-between bg-[#4a1f1f] px-[22px] py-4 text-white">
-          <h2 id={titleId} className="text-lg font-bold">{title}</h2>
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={onClose}
-            className="cursor-pointer border-0 bg-transparent text-[26px] leading-none text-white"
-          >
-            ×
-          </button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-4 top-4 z-10 cursor-pointer rounded-full border-0 bg-black/5 p-1.5 text-gray-700 transition hover:bg-black/10"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+        <div className="shrink-0 border-b border-[#4a1f1f]/10 bg-[#faf6f0] px-6 pb-4 pt-6 pr-14">
+          <h2 id={titleId} className="text-xl font-bold leading-tight text-[#4a1f1f]">{title}</h2>
+          {subtitle && <p className="mt-1 text-[13px] text-gray-500">{subtitle}</p>}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        <div className="hover-scroll min-h-0 flex-1 overflow-y-auto" onScroll={onScroll}>{children}</div>
       </div>
     </div>
   );
@@ -356,6 +406,129 @@ function Field({ label, error, counter, children }) {
           {error ? <span className="block text-[11.5px] font-normal text-[#c0121f]" role="alert">{error}</span> : <span />}
           {counter}
         </div>
+      )}
+    </div>
+  );
+}
+
+function ModalFrame({ titleId, onClose, header, footer, children }) {
+  const timer = useRef(null);
+
+  useEffect(() => {
+    modalLocks++;
+    document.body.style.overflow = "hidden";
+    return () => {
+      clearTimeout(timer.current);
+      modalLocks--;
+      if (modalLocks === 0) document.body.style.overflow = "";
+    };
+  }, []);
+
+  const onScroll = (e) => {
+    const el = e.currentTarget;
+    el.classList.add("is-scrolling");
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => el.classList.remove("is-scrolling"), 800);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="relative flex max-h-[90vh] w-full max-w-[520px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-4 top-4 z-10 cursor-pointer rounded-full border-0 bg-black/5 p-1.5 text-gray-700 transition hover:bg-black/10"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+        {header}
+        <div className="hover-scroll min-h-0 flex-1 overflow-y-auto" onScroll={onScroll}>
+          {children}
+        </div>
+        {footer}
+      </div>
+    </div>
+  );
+}
+
+const FormSection = ({ title, children }) => (
+  <fieldset className="rounded-xl border border-[#4a1f1f]/20 p-4">
+    <legend className="px-1.5 text-xs font-semibold uppercase tracking-wide text-[#4a1f1f]">{title}</legend>
+    <div className="flex flex-col gap-3.5">{children}</div>
+  </fieldset>
+);
+
+function SubcategoryPicker({ options, disabled, placeholder, ...inputProps }) {
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef(null);
+  const value = inputProps.value || "";
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => { if (!boxRef.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const term = value.trim().toLowerCase();
+  const matches = options.filter((s) => s.toLowerCase().includes(term));
+  const isNew = term !== "" && !options.some((s) => s.toLowerCase() === term);
+
+  const choose = (s) => {
+    inputProps.onChange({ target: { value: s } });
+    setOpen(false);
+  };
+
+  return (
+    <div ref={boxRef} className="relative">
+      <input
+        {...inputProps}
+        type="text"
+        maxLength={40}
+        autoComplete="off"
+        disabled={disabled}
+        placeholder={placeholder}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => { inputProps.onChange(e); setOpen(true); }}
+      />
+      {open && !disabled && (matches.length > 0 || isNew) && (
+        <ul className="absolute left-0 right-0 z-20 mt-1 max-h-44 overflow-y-auto rounded-lg border border-[#4a1f1f]/20 bg-white py-1 shadow-lg">
+          {matches.map((s) => (
+            <li key={s}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => choose(s)}
+                className="block w-full cursor-pointer border-0 bg-transparent px-3 py-2 text-left text-[13px] font-normal text-[#1b1b1b] hover:bg-[#faf6f0]"
+              >
+                {s}
+              </button>
+            </li>
+          ))}
+          {isNew && (
+            <li className="border-t border-[#4a1f1f]/10">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => choose(value.trim())}
+                className="block w-full cursor-pointer border-0 bg-transparent px-3 py-2 text-left text-[13px] font-semibold text-[#8a5a00] hover:bg-[#faf6f0]"
+              >
+                + Add "{value.trim()}" as a new subcategory
+              </button>
+            </li>
+          )}
+        </ul>
       )}
     </div>
   );
@@ -405,6 +578,7 @@ function BookFormModal({ book, books = [], ask, onClose, onSave }) {
   const clearUpload = () => { setUpload(null); setFileError(""); };
 
   useEffect(() => { firstRef.current?.focus(); }, []);
+  useEffect(() => { setImgOk(null); }, [previewSrc]);
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -416,7 +590,7 @@ function BookFormModal({ book, books = [], ask, onClose, onSave }) {
     value: form[k],
     onChange: (e) => setForm({ ...form, [k]: e.target.value }),
     onBlur: () => setTouched({ ...touched, [k]: true }),
-    className: `${inputBase} ${err(k) ? "border-[#c0121f]" : "border-[#2b2b2b]"} ${form[k] ? "text-[#1b1b1b]" : "text-gray-400"}`,
+    className: `${inputBase} ${err(k) ? "border-[#c0121f]" : "border-[#4a1f1f]/25 focus:border-[#4a1f1f]"} ${form[k] ? "text-[#1b1b1b]" : "text-gray-400"}`,
     "aria-invalid": !!err(k),
   });
 
@@ -461,138 +635,194 @@ function BookFormModal({ book, books = [], ask, onClose, onSave }) {
 
   const full = form.description.length >= DESC_MAX;
 
-  return (
-    <Modal title={editing ? "Edit Book" : "Add Book"} titleId="book-form-title" onClose={onClose}>
-      <form onSubmit={submit} noValidate className="flex flex-col gap-3.5 px-6 pt-[22px] pb-[26px]">
-        <Field label="Book Title" error={err("title")}>
-          <input ref={firstRef} type="text" placeholder="Enter a Book Title" {...bind("title")} />
-        </Field>
-
-        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
-          <Field label="Author Name" error={err("author")}>
-            <input type="text" placeholder="Enter a Author Name" {...bind("author")} />
-          </Field>
-          <Field label="Publisher" error={err("publisher")}>
-            <input type="text" placeholder="Enter a Publisher Name" {...bind("publisher")} />
-          </Field>
-        </div>
-
-        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
-          <Field label="ISBN" error={err("isbn")}>
-            <input type="text" placeholder="e.g. 978-0-547-92822-7" {...bind("isbn")} />
-          </Field>
-          <Field label="Number of Pages" error={err("pages")}>
-            <input type="number" min="1" max="10000" placeholder="e.g. 310" {...bind("pages")} />
-          </Field>
-        </div>
-
-        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
-          <Field label="Category" error={err("category")}>
-            <select
-              {...bind("category")}
-              onChange={(e) => setForm({ ...form, category: e.target.value, subcategory: "" })}
-            >
-              <option value="" disabled>Choose a Category</option>
-              {CATEGORIES.map((c) => <option key={c} className="text-[#1b1b1b]">{c}</option>)}
-            </select>
-          </Field>
-          <Field label="Date Published" error={err("published")}>
-            <input type="date" max={todayISO()} {...bind("published")} />
-          </Field>
-        </div>
-
-        <Field label="Subcategory (optional)" error={err("subcategory")}>
-          <input
-            type="text"
-            list="subcategory-options"
-            maxLength={40}
-            disabled={!form.category}
-            placeholder={form.category ? "Pick one or type a new one" : "Choose a category first"}
-            {...bind("subcategory")}
-          />
-          <datalist id="subcategory-options">
-            {[...new Set(
-              books
-                .filter((b) => b.category === form.category && b.subcategory)
-                .map((b) => b.subcategory)
-            )].sort().map((s) => <option key={s} value={s} />)}
-          </datalist>
-        </Field>
-
-        <Field
-          label="Description (optional)"
-          error={err("description")}
-          counter={
-            <span className={`ml-auto whitespace-nowrap text-[11.5px] ${full ? "font-bold text-[#c0121f]" : "font-normal text-gray-500"}`}>
-              {form.description.length}/{DESC_MAX}
-            </span>
+  const original = useMemo(
+    () =>
+      book
+        ? {
+            title: book.title, author: book.author, publisher: book.publisher, category: book.category,
+            subcategory: book.subcategory || "",
+            published: book.published, description: book.description || "", image: isData ? "" : book.image || "",
+            copies: String(book.copies ?? 1),
+            isbn: book.isbn || "",
+            pages: book.pages ? String(book.pages) : "",
+            shelf: book.shelf || "",
           }
-        >
-          <textarea
-            placeholder="Enter a short description..."
-            maxLength={DESC_MAX}
-            {...bind("description")}
-            className={`${bind("description").className} min-h-[110px] resize-y`}
-          />
-        </Field>
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+  const norm = (v) => String(v ?? "").trim();
+  const changedFields = original
+    ? Object.keys(original).filter((k) => norm(form[k]) !== norm(original[k]))
+    : [];
+  const imageChanged = original ? (upload ? upload.data : null) !== (isData ? book.image : null) : false;
+  const hasChanges = !editing || changedFields.length > 0 || imageChanged;
 
-        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
-          <Field label="Total Copies" error={err("copies")}>
-            <input type="number" min="1" max="99" placeholder="e.g. 3" {...bind("copies")} />
-          </Field>
-          <Field label="Shelf / Location (optional)" error={err("shelf")}>
-            <input type="text" maxLength={40} placeholder="e.g. Aisle 3, Shelf B" {...bind("shelf")} />
-          </Field>
-        </div>
-
-        <Field label="Image Upload" error={fileError || err("image")}>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Image Link"
-              {...bind("image")}
-              className={`${bind("image").className} min-w-0 flex-1`}
-              value={upload ? upload.name : form.image}
-              readOnly={!!upload}
-            />
-            {upload ? (
-              <button type="button" className={btnSmall} onClick={clearUpload}>Remove</button>
-            ) : (
-              <button type="button" className={btnSmall} onClick={() => fileRef.current?.click()}>Browse</button>
-            )}
-          </div>
-        </Field>
-        <input ref={fileRef} type="file" accept="image/*" hidden onChange={pickFile} />
-        {previewSrc && (
-          <div className="flex items-center gap-2.5 text-[11.5px]">
+    return (
+    <ModalFrame
+      titleId="book-form-title"
+      onClose={onClose}
+      header={
+        <div className="flex items-center gap-4 border-b border-[#4a1f1f]/10 bg-[#faf6f0] px-6 pt-6 pb-5 pr-14">
+          {previewSrc && imgOk !== false ? (
             <img
-              className="h-[58px] w-[40px] rounded-[3px] border border-[#2b2b2b] object-cover"
+              className="h-[92px] w-[64px] shrink-0 rounded-md object-cover shadow-md ring-1 ring-black/10"
               src={previewSrc}
               alt="Cover preview"
               referrerPolicy="no-referrer"
               onLoad={() => setImgOk(true)}
               onError={() => setImgOk(false)}
             />
-            <span className={imgOk === false ? "text-[#c0121f]" : "text-[#0c7a43]"}>
+          ) : (
+            <div className="relative h-[92px] w-[64px] shrink-0 overflow-hidden rounded-md bg-[#4a1f1f] shadow-md">
+              <span className="absolute inset-x-2 bottom-4 h-2 rounded-sm bg-[#eea51c]" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <h2 id="book-form-title" className="text-xl font-bold leading-tight text-[#4a1f1f]">
+              {editing ? "Edit Book" : "Add Book"}
+            </h2>
+            <span className="mt-1 inline-block rounded-full bg-[#4a1f1f]/10 px-3 py-0.5 text-xs font-semibold text-[#4a1f1f]">
+              {form.category || "No category yet"}
+            </span>
+            <p className="mt-1 truncate text-[13px] text-gray-500">
+              {form.title.trim() || "Untitled book"}
+              {form.author.trim() && ` · ${form.author.trim()}`}
+            </p>
+          </div>
+        </div>
+      }
+      footer={
+        <div className="flex shrink-0 flex-col gap-3 border-t border-[#4a1f1f]/10 bg-white px-6 py-4">
+          {submitError && (
+            <p className="rounded-lg bg-[#c0121f]/10 p-3 text-[12.5px] font-semibold text-[#c0121f]" role="alert">{submitError}</p>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <button type="button" className={btnSecondary} onClick={onClose}>Cancel</button>
+            <button
+              type="submit"
+              form="book-form"
+              className={btnPrimary}
+              disabled={saving || !hasChanges}
+              title={!hasChanges ? "No changes to save" : undefined}
+            >
+              {saving ? "Saving..." : editing ? "Save changes" : "Add book"}
+            </button>
+          </div>
+        </div>
+      }
+    >
+      <form id="book-form" onSubmit={submit} noValidate className="flex flex-col gap-4 px-6 py-5 text-[13px]">
+        <FormSection title="Book details">
+          <Field label="Book Title" error={err("title")}>
+            <input ref={firstRef} type="text" placeholder="Enter a Book Title" {...bind("title")} />
+          </Field>
+          <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+            <Field label="Author Name" error={err("author")}>
+              <input type="text" placeholder="Enter an Author Name" {...bind("author")} />
+            </Field>
+            <Field label="Publisher" error={err("publisher")}>
+              <input type="text" placeholder="Enter a Publisher Name" {...bind("publisher")} />
+            </Field>
+          </div>
+        </FormSection>
+
+        <FormSection title="Catalog information">
+          <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+            <Field label="ISBN" error={err("isbn")}>
+              <input type="text" placeholder="e.g. 978-0-547-92822-7" {...bind("isbn")} />
+            </Field>
+            <Field label="Number of Pages" error={err("pages")}>
+              <input type="number" min="1" max="10000" placeholder="e.g. 310" {...bind("pages")} />
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+            <Field label="Category" error={err("category")}>
+              <select
+                {...bind("category")}
+                onChange={(e) => setForm({ ...form, category: e.target.value, subcategory: "" })}
+              >
+                <option value="" disabled>Choose a Category</option>
+                {CATEGORIES.map((c) => <option key={c} className="text-[#1b1b1b]">{c}</option>)}
+              </select>
+            </Field>
+            <Field label="Date Published" error={err("published")}>
+              <input type="date" max={todayISO()} {...bind("published")} />
+            </Field>
+          </div>
+          <Field label="Subcategory (optional)" error={err("subcategory")}>
+            <SubcategoryPicker
+              disabled={!form.category}
+              placeholder={form.category ? "Pick one or type a new one" : "Choose a category first"}
+              options={[...new Set(
+                books
+                  .filter((b) => b.category === form.category && b.subcategory)
+                  .map((b) => b.subcategory)
+              )].sort()}
+              {...bind("subcategory")}
+            />
+          </Field>
+        </FormSection>
+
+        <FormSection title="Description">
+          <Field
+            label="Short summary (optional)"
+            error={err("description")}
+            counter={
+              <span className={`ml-auto whitespace-nowrap text-[11.5px] ${full ? "font-bold text-[#c0121f]" : "font-normal text-gray-500"}`}>
+                {form.description.length}/{DESC_MAX}
+              </span>
+            }
+          >
+            <textarea
+              placeholder="Enter a short description..."
+              maxLength={DESC_MAX}
+              {...bind("description")}
+              className={`${bind("description").className} min-h-[110px] resize-y`}
+            />
+          </Field>
+        </FormSection>
+
+        <FormSection title="Inventory">
+          <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+            <Field label="Total Copies" error={err("copies")}>
+              <input type="number" min="1" max="99" placeholder="e.g. 3" {...bind("copies")} />
+            </Field>
+            <Field label="Shelf / Location (optional)" error={err("shelf")}>
+              <input type="text" maxLength={40} placeholder="e.g. Aisle 3, Shelf B" {...bind("shelf")} />
+            </Field>
+          </div>
+        </FormSection>
+
+        <FormSection title="Cover image">
+          <Field label="Image link or upload" error={fileError || err("image")}>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Image Link"
+                {...bind("image")}
+                className={`${bind("image").className} min-w-0 flex-1`}
+                value={upload ? upload.name : form.image}
+                readOnly={!!upload}
+              />
+              {upload ? (
+                <button type="button" className={btnSmall} onClick={clearUpload}>Remove</button>
+              ) : (
+                <button type="button" className={btnBrowse} onClick={() => fileRef.current?.click()}>Browse</button>
+              )}
+            </div>
+          </Field>
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={pickFile} />
+          {previewSrc && (
+            <p className={`text-[11.5px] ${imgOk === false ? "text-[#c0121f]" : "text-[#0c7a43]"}`}>
               {imgOk === false
                 ? "Couldn't load this image. Use a direct image link (ends in .jpg or .png), or browse a file."
-                : imgOk ? "Image loaded." : "Loading preview..."}
-            </span>
-          </div>
-        )}
-
-        {submitError && (
-          <p className="text-[12.5px] font-semibold text-[#c0121f]" role="alert">{submitError}</p>
-        )}
-
-        <div className="mt-1.5 grid grid-cols-2 gap-6">
-          <button type="submit" className={btnPrimary} disabled={saving}>
-            {saving ? "Saving..." : editing ? "Edit Book" : "Add Book"}
-          </button>
-          <button type="button" className={btnSecondary} onClick={onClose}>Cancel</button>
-        </div>
+                : imgOk ? "Image loaded. See the preview at the top." : "Loading preview..."}
+            </p>
+          )}
+        </FormSection>
       </form>
-    </Modal>
+    </ModalFrame>
   );
 }
 
@@ -612,9 +842,9 @@ function ConfirmDeleteModal({ book, onCancel, onConfirm }) {
         <p id="delete-desc" className="mb-[18px] text-sm leading-normal">
           Delete <strong>{book.title}</strong> from the catalog? This can't be undone.
         </p>
-        <div className="grid grid-cols-2 gap-6">
-          <button type="button" className={btnDanger} onClick={onConfirm}>Delete</button>
+        <div className="grid grid-cols-2 gap-4">
           <button type="button" className={btnSecondary} ref={cancelRef} onClick={onCancel}>Cancel</button>
+          <button type="button" className={btnDanger} onClick={onConfirm}>Delete</button>
         </div>
       </div>
     </Modal>
@@ -630,7 +860,9 @@ const localISO = () => new Date().toISOString().slice(0, 10); // server dates ar
 const isToday = (iso) => !!iso && String(iso).slice(0, 10) === localISO();
 const copiesLeft = (b) => b.copiesAvailable ?? (b.status === "Available" ? 1 : 0);
 const isReturned = (t) => t.status === "Returned";
-const TABS = [["overview", "Overview"], ["books", "Books"], ["borrowers", "Borrowers"], ["requests", "Requests"]];
+const loanTone = (count) =>
+  count >= MAX_LOANS ? "bg-[#c0121f]" : count > MAX_LOANS / 2 ? "bg-[#eea51c]" : "bg-[#0c7a43]";
+const TABS = [["overview", "Overview"], ["analytics", "Analytics"], ["books", "Books"], ["borrowers", "Borrowers"], ["requests", "Requests"]];
 const TONES = { red: "#c0121f", amber: "#eea51c", maroon: "#4a1f1f", green: "#0c7a43" };
 
 const eligibility = (student, book, transactions) => {
@@ -947,6 +1179,252 @@ function ImportModal({ books, activeFor, ask, onClose, onDone }) {
   );
 }
 
+// ---------- Book info card (shared by Issue and Return) ----------
+function BookInfoCard({ book }) {
+  return (
+    <div className="flex gap-3 rounded-xl border border-[#4a1f1f]/20 bg-[#faf6f0] p-3 text-[13px]">
+      <div className="shrink-0"><Cover colors={book.cover} image={book.image} /></div>
+      <div className="min-w-0 flex-1">
+        <strong className="block">{book.title}</strong>
+        <span className="block text-gray-600">by {book.author}</span>
+        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+          {[
+            ["Category", `${book.category}${book.subcategory ? ` · ${book.subcategory}` : ""}`],
+            ["Publisher", book.publisher],
+            ["ISBN", book.isbn],
+            ["Pages", book.pages],
+            ["Shelf / Location", book.shelf],
+            ["Available", `${copiesLeft(book)} of ${book.totalCopies ?? 1}`],
+          ]
+            .filter(([, value]) => value !== "" && value != null)
+            .map(([label, value]) => (
+              <div key={label} className="min-w-0">
+                <dt className="text-gray-500">{label}</dt>
+                <dd className="break-words font-semibold">{value}</dd>
+              </div>
+            ))}
+        </dl>
+        {book.description && <p className="mt-2 text-xs leading-relaxed text-gray-700">{book.description}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Custom book dropdown ----------
+function BookPicker({ books, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const boxRef = useRef(null);
+  const selected = books.find((b) => String(b.id) === String(value));
+  const year = (b) => (b.published ? String(b.published).slice(0, 4) : "");
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => { if (!boxRef.current?.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const term = q.trim().toLowerCase();
+  const list = books.filter(
+    (b) => !term || [b.title, b.author, b.publisher].some((f) => (f || "").toLowerCase().includes(term))
+  );
+
+  const pick = (b) => {
+    onChange(String(b.id));
+    setOpen(false);
+    setQ("");
+  };
+
+  return (
+    <div ref={boxRef}>
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full cursor-pointer items-center gap-3 rounded-lg border border-[#4a1f1f]/25 bg-white px-3 py-2 text-left text-[13px] focus:border-[#4a1f1f] focus:outline-none focus:ring-2 focus:ring-[#eea51c]/50"
+      >
+        {selected ? (
+          <>
+            <div className="shrink-0"><Cover colors={selected.cover} image={selected.image} /></div>
+            <span className="min-w-0 flex-1">
+              <strong className="block truncate">{selected.title}</strong>
+              <span className="block truncate text-xs text-gray-600">by {selected.author}</span>
+            </span>
+          </>
+        ) : (
+          <span className="flex-1 py-1.5 text-gray-400">Choose a book</span>
+        )}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`shrink-0 text-[#4a1f1f] transition ${open ? "rotate-180" : ""}`}>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="mt-2 overflow-hidden rounded-xl border border-[#4a1f1f]/20 bg-white shadow-sm">
+          <div className="border-b border-[#4a1f1f]/10 p-2">
+            <SearchInput
+              autoFocus
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search by title, author, or publisher"
+            />
+          </div>
+          <ul role="listbox" className="hover-scroll max-h-64 overflow-y-auto">
+            {list.length === 0 && <li className="p-4 text-center text-xs text-gray-500">No books match.</li>}
+            {list.map((b) => {
+              const left = copiesLeft(b);
+              const active = String(b.id) === String(value);
+              return (
+                <li key={b.id} className="border-b border-[#4a1f1f]/10 last:border-b-0">
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => pick(b)}
+                    className={`flex w-full cursor-pointer items-center gap-3 border-0 px-3 py-2.5 text-left transition hover:bg-[#faf6f0] ${active ? "bg-[#faf6f0]" : "bg-transparent"} ${left < 1 ? "opacity-70" : ""}`}
+                  >
+                    <div className="shrink-0"><Cover colors={b.cover} image={b.image} /></div>
+                    <span className="min-w-0 flex-1">
+                      <strong className="block truncate text-[13px]">{b.title}</strong>
+                      <span className="block truncate text-xs text-gray-600">by {b.author}</span>
+                      <span className="block truncate text-xs text-gray-500">
+                        {[b.publisher, year(b)].filter(Boolean).join(" · ")}
+                      </span>
+                    </span>
+                    <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${left > 0 ? BADGE_COLORS.available : BADGE_COLORS.overdue}`}>
+                      {left > 0 ? `${left} left` : "No copies"}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Custom student dropdown ----------
+function StudentPicker({ students, transactions, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const boxRef = useRef(null);
+  const selected = students.find((s) => s.email === value);
+
+  const activeCount = (s) => transactions.filter((t) => t.borrowerEmail === s.email && !isReturned(t)).length;
+  const hasOverdue = (s) => transactions.some((t) => t.borrowerEmail === s.email && !isReturned(t) && t.overdue);
+  const detail = (s) =>
+    s.role === "professor"
+      ? s.department
+      : [s.course, s.yearLevel].filter(Boolean).join(" · ");
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => { if (!boxRef.current?.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const term = q.trim().toLowerCase();
+  const list = students.filter(
+    (s) =>
+      !term ||
+      [s.fullName, s.email, s.phone, s.idNumber].some((f) => String(f || "").toLowerCase().includes(term))
+  );
+
+  const pick = (s) => {
+    onChange(s.email);
+    setOpen(false);
+    setQ("");
+  };
+
+  return (
+    <div ref={boxRef}>
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full cursor-pointer items-center gap-3 rounded-lg border border-[#4a1f1f]/25 bg-white px-3 py-2 text-left text-[13px] focus:border-[#4a1f1f] focus:outline-none focus:ring-2 focus:ring-[#eea51c]/50"
+      >
+        {selected ? (
+          <>
+            <Avatar src={selected.avatar} name={selected.fullName} className="h-9 w-9" />
+            <span className="min-w-0 flex-1">
+              <strong className="block truncate">{selected.fullName}</strong>
+              <span className="block truncate text-xs text-gray-600">{selected.email}</span>
+            </span>
+          </>
+        ) : (
+          <span className="flex-1 py-1.5 text-gray-400">Choose a student</span>
+        )}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`shrink-0 text-[#4a1f1f] transition ${open ? "rotate-180" : ""}`}>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="mt-2 overflow-hidden rounded-xl border border-[#4a1f1f]/20 bg-white shadow-sm">
+          <div className="border-b border-[#4a1f1f]/10 p-2">
+            <SearchInput
+              autoFocus
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search by name, email, phone, or ID"
+            />
+          </div>
+          <ul role="listbox" className="hover-scroll max-h-64 overflow-y-auto">
+            {list.length === 0 && <li className="p-4 text-center text-xs text-gray-500">No students found.</li>}
+            {list.map((s) => {
+              const count = activeCount(s);
+              const active = s.email === value;
+              return (
+                <li key={s.email} className="border-b border-[#4a1f1f]/10 last:border-b-0">
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => pick(s)}
+                    className={`flex w-full cursor-pointer items-center gap-3 border-0 px-3 py-2.5 text-left transition hover:bg-[#faf6f0] ${active ? "bg-[#faf6f0]" : "bg-transparent"}`}
+                  >
+                    <Avatar src={s.avatar} name={s.fullName} className="h-10 w-10" />
+                    <span className="min-w-0 flex-1">
+                      <strong className="block truncate text-[13px]">{s.fullName}</strong>
+                      <span className="block truncate text-xs text-gray-600">{s.email}</span>
+                      {detail(s) && <span className="block truncate text-xs text-gray-500">{detail(s)}</span>}
+                    </span>
+                    <span className="flex shrink-0 flex-col items-end gap-1">
+                      <span className={`rounded-full ${loanTone(count)} px-2.5 py-[3px] text-[11px] font-bold text-white`}>
+                        {count}/{MAX_LOANS} books
+                      </span>
+                      {hasOverdue(s) && (
+                        <span className="rounded-full bg-[#c0121f] px-2.5 py-[3px] text-[11px] font-bold text-white">Overdue</span>
+                      )}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- Issue book ----------
 function IssueModal({ students, books, transactions, initial, onClose, onIssue }) {
   const [email, setEmail] = useState(initial?.student?.email || "");
@@ -969,18 +1447,18 @@ function IssueModal({ students, books, transactions, initial, onClose, onIssue }
   return (
     <Modal title="Issue Book" titleId="issue-title" onClose={onClose}>
       <div className="flex flex-col gap-3.5 px-6 pt-[22px] pb-[26px]">
-        <Field label="Student">
-          <select className={`${inputBase} border-[#2b2b2b]`} value={email} onChange={(e) => setEmail(e.target.value)}>
-            <option value="" disabled>Choose a student</option>
-            {students.map((s) => <option key={s.email} value={s.email}>{s.fullName} · {s.email}</option>)}
-          </select>
-        </Field>
-        <Field label="Book">
-          <select className={`${inputBase} border-[#2b2b2b]`} value={bookId} onChange={(e) => setBookId(e.target.value)}>
-            <option value="" disabled>Choose a book</option>
-            {books.map((b) => <option key={b.id} value={b.id}>{b.title} ({copiesLeft(b)} left)</option>)}
-          </select>
-        </Field>
+        <div>
+          <span className="block text-[13px] font-bold">Student</span>
+          <div className="mt-1.5">
+            <StudentPicker students={students} transactions={transactions} value={email} onChange={setEmail} />
+          </div>
+        </div>
+        <div>
+          <span className="block text-[13px] font-bold">Book</span>
+          <div className="mt-1.5">
+            <BookPicker books={books} value={bookId} onChange={setBookId} />
+          </div>
+        </div>
         {book && (
           <div className="flex gap-3 rounded-xl border border-[#4a1f1f]/20 bg-[#faf6f0] p-3 text-[13px]">
             <div className="shrink-0"><Cover colors={book.cover} image={book.image} /></div>
@@ -1027,7 +1505,7 @@ function IssueModal({ students, books, transactions, initial, onClose, onIssue }
 // ---------- Transaction row actions ----------
 const TxActions = ({ t, onReturn, onPayFine }) => (
   <span className="inline-flex gap-2">
-    {!isReturned(t) && <button className={`${btnSmall} py-1.5`} onClick={() => onReturn(t)}>Mark returned</button>}
+    {!isReturned(t) && <button className={btnReturn} onClick={() => onReturn(t)}>Mark returned</button>}
     {isReturned(t) && t.fine > 0 && !t.finePaid && <button className={`${btnSmall} py-1.5`} onClick={() => onPayFine(t)}>Mark fine paid</button>}
   </span>
 );
@@ -1103,7 +1581,12 @@ function StudentModal({ student, transactions, onClose, onIssue, onReturn, onPay
         <div className={`rounded-lg p-3 font-semibold ${problem ? "bg-[#c0121f]/10 text-[#c0121f]" : "bg-[#0c7a43]/10 text-[#0c7a43]"}`}>
           {problem || "Eligible to borrow"}
         </div>
-        <p className="font-semibold">Borrowing limit: {active.length}/{MAX_LOANS} books</p>
+        <p className="font-semibold">
+          Borrowing limit:{" "}
+          <span className={`rounded-full ${loanTone(active.length)} px-2.5 py-[3px] text-[11px] font-bold text-white`}>
+            {active.length}/{MAX_LOANS} books
+          </span>
+        </p>
         {fines > 0 && <p className="font-bold text-[#c0121f]">Outstanding fines: {peso(fines)}</p>}
         <button type="button" className={btnPrimary} onClick={() => onIssue(student)}>+ Issue a book</button>
 
@@ -1169,6 +1652,77 @@ function NotificationsModal({ notes, onClear, onClose }) {
 // ---------- Overview ----------
 const sectionTitle = "mb-4 text-lg font-bold tracking-tight text-[#4a1f1f]";
 
+const AXIS_TICK = { fill: "#6B7280", fontSize: 11, fontFamily: "inherit" };
+const AXIS_TICK_SM = { fill: "#9CA3AF", fontSize: 10, fontFamily: "inherit" };
+const GRID_PROPS = { stroke: "#F3F4F6", strokeDasharray: "4 4", vertical: false };
+
+function ChartTooltip({ active, payload, label, suffix = "", unit = "" }) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0].payload;
+  return (
+    <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 10, padding: "10px 14px", fontSize: 12, boxShadow: "0 4px 16px rgba(0,0,0,0.10)", minWidth: 130 }}>
+      <p style={{ margin: "0 0 6px", fontWeight: 700, color: "#111827", fontSize: 12 }}>{label ?? row.label}</p>
+      {payload.map((p, i) => (
+        <p key={i} style={{ margin: "2px 0", color: p.color || "#4a1f1f", fontSize: 11 }}>
+          {p.name === "value" ? (
+            <>
+              <strong>{p.value}{suffix}</strong> {unit}
+              {row.sub && <span style={{ color: "#9CA3AF", marginLeft: 6 }}>{row.sub}</span>}
+            </>
+          ) : (
+            <>{p.name}: <strong>{p.value}</strong></>
+          )}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function LineChart({ gid, labels, series, height = 240, showAvg = false }) {
+  const data = labels.map((label, i) => {
+    const row = { label };
+    series.forEach((s) => { row[s.name] = s.values[i]; });
+    return row;
+  });
+  const first = series[0];
+  const avg = showAvg && first && first.values.length ? first.values.reduce((a, b) => a + b, 0) / first.values.length : null;
+
+  return (
+    <ResponsiveContainer debounce={200} width="100%" height={height}>
+      <AreaChart data={data} margin={{ top: 12, right: 8, left: -20, bottom: 0 }}>
+        <defs>
+          {series.map((s, k) => (
+            <linearGradient key={s.name} id={`${gid}-${k}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={s.color} stopOpacity={0.3} />
+              <stop offset="100%" stopColor={s.color} stopOpacity={0} />
+            </linearGradient>
+          ))}
+        </defs>
+        <CartesianGrid {...GRID_PROPS} />
+        <XAxis dataKey="label" tick={AXIS_TICK_SM} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+        <YAxis tick={AXIS_TICK_SM} axisLine={false} tickLine={false} allowDecimals={false} />
+        <Tooltip content={<ChartTooltip />} cursor={{ stroke: "#E5E7EB", strokeWidth: 1 }} />
+        {series.length > 1 && (
+          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, color: "#6B7280", paddingTop: 8 }} />
+        )}
+        {avg !== null && (
+          <ReferenceLine
+            y={avg} stroke="#7C3AED" strokeDasharray="5 4" strokeWidth={1.5}
+            label={{ value: "avg", fill: "#7C3AED", fontSize: 10, position: "insideTopRight" }}
+          />
+        )}
+        {series.map((s, k) => (
+          <Area
+            key={s.name} type="monotone" dataKey={s.name} name={s.name}
+            stroke={s.color} strokeWidth={2.5} fill={`url(#${gid}-${k})`} dot={false}
+            activeDot={{ r: 5, fill: s.color, stroke: "#fff", strokeWidth: 2 }}
+          />
+        ))}
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
 function BorrowChart({ transactions }) {
   const days = Array.from({ length: 7 }, (_, i) => {
     const iso = new Date(Date.now() - (6 - i) * 86400000).toISOString().slice(0, 10);
@@ -1179,39 +1733,36 @@ function BorrowChart({ transactions }) {
       returned: transactions.filter((t) => t.returned === iso).length,
     };
   });
-  const max = Math.max(1, ...days.flatMap((d) => [d.borrowed, d.returned]));
-  const MAX_H = 44;
-  const h = (n) => (n === 0 ? 3 : Math.max(6, Math.round((n / max) * MAX_H)));
   const totalB = days.reduce((s, d) => s + d.borrowed, 0);
   const totalR = days.reduce((s, d) => s + d.returned, 0);
 
-  const Bar = ({ n, color }) => (
-    <div className="flex flex-col items-center justify-end gap-0.5">
-      <span className="text-[10px] font-bold leading-none" style={{ color, opacity: n ? 1 : 0 }}>{n}</span>
-      <div className="w-3.5 rounded-t-sm" style={{ height: h(n), background: color, opacity: n ? 1 : 0.2 }} />
+  const Stat = ({ color, label, value }) => (
+    <div className="rounded-xl bg-[#faf6f0] px-4 py-2">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
+        <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />
+        {label}
+      </div>
+      <strong className="text-2xl tabular-nums text-[#1b1b1b]">{value}</strong>
     </div>
   );
 
   return (
-    <div className="rounded-xl border border-[#4a1f1f]/20 bg-[#faf6f0] px-4 py-3">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex gap-4 font-semibold text-[#1b1b1b]">
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#4a1f1f]" />Borrowed ({totalB})</span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#0c7a43]" />Returned ({totalR})</span>
+    <div className="rounded-2xl border border-[#4a1f1f]/15 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-3">
+          <Stat color="#4a1f1f" label="Borrowed" value={totalB} />
+          <Stat color="#0c7a43" label="Returned" value={totalR} />
         </div>
-        <span className="text-gray-500">Last 7 days</span>
+        <span className="rounded-full bg-[#faf6f0] px-3 py-1 text-xs font-semibold text-[#4a1f1f]">Last 7 days</span>
       </div>
-      <div className="grid grid-cols-7 gap-2 border-t border-[#4a1f1f]/10 pt-2">
-        {days.map((d) => (
-          <div key={d.iso} className="flex flex-col items-center gap-1" title={`${d.label}: ${d.borrowed} borrowed, ${d.returned} returned`}>
-            <div className="flex h-[62px] items-end gap-1">
-              <Bar n={d.borrowed} color="#4a1f1f" />
-              <Bar n={d.returned} color="#0c7a43" />
-            </div>
-            <span className="text-[11px] font-semibold text-gray-500">{d.label}</span>
-          </div>
-        ))}
-      </div>
+      <LineChart
+        gid="week"
+        labels={days.map((d) => d.label)}
+        series={[
+          { name: "Borrowed", color: "#4a1f1f", values: days.map((d) => d.borrowed) },
+          { name: "Returned", color: "#0c7a43", values: days.map((d) => d.returned) },
+        ]}
+      />
     </div>
   );
 }
@@ -1277,7 +1828,10 @@ function Overview({ books, transactions, requests, onAction, onStat }) {
         ))}
       </section>
 
-      <h2 className={sectionTitle}>Borrowing Activity</h2>
+      <div className="mb-4 flex items-end justify-between">
+        <h2 className="text-lg font-bold tracking-tight text-[#4a1f1f]">Borrowing Activity</h2>
+        <button onClick={() => onAction("analytics")} className="cursor-pointer border-0 bg-transparent text-xs font-bold text-[#0b4a8b] hover:underline">View analytics</button>
+      </div>
       <div className="mb-8"><BorrowChart transactions={transactions} /></div>
 
       <div className="mb-8 grid gap-8 md:grid-cols-2">
@@ -1336,12 +1890,503 @@ function Overview({ books, transactions, requests, onAction, onStat }) {
   );
 }
 
+// ---------- Analytics ----------
+const RANGES = [["day", "Today"], ["week", "Last 7 days"], ["month", "Last 30 days"], ["year", "Last 12 months"], ["custom", "Custom"]];
+const SERIES_COLORS = ["#4a1f1f", "#eea51c", "#0c7a43", "#0b4a8b"];
+const isoMs = (iso) => Date.parse(iso + "T00:00:00Z");
+const addDays = (iso, n) => new Date(isoMs(iso) + n * 86400000).toISOString().slice(0, 10);
+const shortDate = (iso, opts) => new Date(isoMs(iso)).toLocaleDateString("en-US", { timeZone: "UTC", ...opts });
+// Students are grouped by course, faculty by department. Change this one function if your data differs.
+const deptOf = (u) => (u ? (u.role === "professor" ? u.department : u.course) : "") || "Unassigned";
+
+const resolveRange = (range, from, to) => {
+  const today = localISO();
+  let start = today, end = today;
+  if (range === "week") start = addDays(today, -6);
+  else if (range === "month") start = addDays(today, -29);
+  else if (range === "year") start = addDays(today, -364);
+  else if (range === "custom") { start = from || addDays(today, -29); end = to || today; }
+  return start <= end ? { start, end } : { start: end, end: start };
+};
+
+const buildBuckets = (start, end) => {
+  const span = Math.round((isoMs(end) - isoMs(start)) / 86400000) + 1;
+  const out = [];
+  if (span <= 31) {
+    for (let i = 0; i < span; i++) {
+      const d = addDays(start, i);
+      out.push({ start: d, end: d, label: shortDate(d, { month: "short", day: "numeric" }) });
+    }
+    return { buckets: out, unit: "Daily" };
+  }
+  if (span <= 120) {
+    for (let s = start; s <= end; s = addDays(s, 7)) {
+      const e = addDays(s, 6);
+      out.push({ start: s, end: e > end ? end : e, label: shortDate(s, { month: "short", day: "numeric" }) });
+    }
+    return { buckets: out, unit: "Weekly" };
+  }
+  let y = +start.slice(0, 4), m = +start.slice(5, 7);
+  for (let guard = 0; guard < 240; guard++) {
+    const first = `${y}-${String(m).padStart(2, "0")}-01`;
+    if (first > end) break;
+    const ny = m === 12 ? y + 1 : y;
+    const nm = m === 12 ? 1 : m + 1;
+    const last = addDays(`${ny}-${String(nm).padStart(2, "0")}-01`, -1);
+    out.push({
+      start: first < start ? start : first,
+      end: last > end ? end : last,
+      label: shortDate(first, { month: "short", year: "2-digit" }),
+    });
+    y = ny;
+    m = nm;
+  }
+  return { buckets: out, unit: "Monthly" };
+};
+
+const tally = (list, keyFn) => {
+  const m = new Map();
+  list.forEach((r) => {
+    const k = keyFn(r);
+    if (k) m.set(k, (m.get(k) || 0) + 1);
+  });
+  return [...m]
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+};
+
+function EmptyChart({ text }) {
+  return (
+    <div className="flex h-40 items-center justify-center rounded-xl bg-[#faf6f0] px-4 text-center text-sm text-gray-500">
+      {text || "No borrowing records match the selected filters."}
+    </div>
+  );
+}
+
+function ChartCard({ title, purpose, controls, wide, children }) {
+  return (
+    <section className={`rounded-2xl border border-[#4a1f1f]/15 bg-white p-5 shadow-sm ${wide ? "lg:col-span-2" : ""}`}>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-base font-bold tracking-tight text-[#4a1f1f]">{title}</h3>
+          <p className="mt-0.5 text-xs text-gray-500">{purpose}</p>
+        </div>
+        {controls && <div className="flex flex-wrap items-center gap-2">{controls}</div>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+const DONUT_COLORS = ["#4a1f1f", "#eea51c", "#0c7a43", "#0b4a8b", "#c0121f", "#7C3AED", "#0e7490", "#9CA3AF"];
+
+const cutLabel = (s, n = 22) => (String(s).length > n ? `${String(s).slice(0, n - 1)}…` : s);
+
+// Horizontal bars with a soft gradient and a light track behind each bar
+function HBars({ rows, color = "#4a1f1f", suffix = "", unit = "transactions", max: fixedMax, empty }) {
+  if (!rows.length) return <EmptyChart text={empty} />;
+  const top = Math.max(...rows.map((r) => r.value), 1);
+  const gid = `hb-${color.replace("#", "")}`;
+
+  return (
+    <ResponsiveContainer debounce={200} width="100%" height={rows.length * 46 + 28}>
+      <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 64, left: 0, bottom: 0 }} barCategoryGap="24%">
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor={color} stopOpacity={0.55} />
+            <stop offset="100%" stopColor={color} stopOpacity={1} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke="#F3F4F6" strokeDasharray="4 4" horizontal={false} />
+        <XAxis
+          type="number" domain={[0, fixedMax || Math.ceil(top * 1.1)]}
+          tick={AXIS_TICK_SM} axisLine={false} tickLine={false} allowDecimals={false}
+          tickFormatter={(v) => `${v}${suffix}`}
+        />
+        <YAxis type="category" dataKey="label" width={130} tick={AXIS_TICK} tickFormatter={(s) => cutLabel(s)} axisLine={false} tickLine={false} />
+        <Tooltip content={<ChartTooltip suffix={suffix} unit={unit} />} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
+        <Bar dataKey="value" fill={`url(#${gid})`} radius={[0, 8, 8, 0]} maxBarSize={22} background={{ fill: "#faf6f0", radius: 8 }}>
+          <LabelList
+            dataKey="value" position="right"
+            formatter={(v) => `${v}${suffix}`}
+            style={{ fontSize: 11, fontWeight: 700, fill: "#4a1f1f" }}
+          />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Vertical bars. Pass `color` for a single color, or omit it for a multi-color palette.
+function VBars({ rows, color, suffix = "", unit = "transactions", max: fixedMax, empty }) {
+  if (!rows.length) return <EmptyChart text={empty} />;
+  const crowded = rows.length > 4;
+
+  return (
+    <ResponsiveContainer debounce={200} width="100%" height={crowded ? 300 : 260}>
+      <BarChart data={rows} margin={{ top: 22, right: 8, left: -16, bottom: 0 }} barCategoryGap="26%">
+        <defs>
+          {(color ? [color] : DONUT_COLORS).map((c) => (
+            <linearGradient key={c} id={`vb-${c.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={c} stopOpacity={1} />
+              <stop offset="100%" stopColor={c} stopOpacity={0.55} />
+            </linearGradient>
+          ))}
+        </defs>
+        <CartesianGrid {...GRID_PROPS} />
+        <XAxis
+          dataKey="label" tick={AXIS_TICK} axisLine={false} tickLine={false} interval={0}
+          tickFormatter={(s) => cutLabel(s, crowded ? 14 : 22)}
+          angle={crowded ? -25 : 0} textAnchor={crowded ? "end" : "middle"} height={crowded ? 64 : 30}
+        />
+        <YAxis
+          domain={[0, fixedMax || "auto"]} tick={AXIS_TICK_SM} axisLine={false} tickLine={false} allowDecimals={false}
+          tickFormatter={(v) => `${v}${suffix}`}
+        />
+        <Tooltip content={<ChartTooltip suffix={suffix} unit={unit} />} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
+        <Bar dataKey="value" radius={[8, 8, 0, 0]} maxBarSize={52} background={{ fill: "#faf6f0", radius: 8 }}>
+          {rows.map((r, i) => {
+            const c = color || DONUT_COLORS[i % DONUT_COLORS.length];
+            return <Cell key={r.label} fill={`url(#vb-${c.replace("#", "")})`} />;
+          })}
+          <LabelList
+            dataKey="value" position="top"
+            formatter={(v) => `${v}${suffix}`}
+            style={{ fontSize: 11, fontWeight: 700, fill: "#4a1f1f" }}
+          />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function DonutTooltip({ active, payload, total, unit }) {
+  if (!active || !payload?.length) return null;
+  const { label, value } = payload[0].payload;
+  return (
+    <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 10, padding: "10px 14px", fontSize: 12, boxShadow: "0 4px 16px rgba(0,0,0,0.10)" }}>
+      <p style={{ margin: "0 0 4px", fontWeight: 700, color: "#111827" }}>{label}</p>
+      <p style={{ margin: 0, color: "#4a1f1f", fontSize: 11 }}>
+        <strong>{value}</strong> {unit} · {Math.round((value / total) * 100)}%
+      </p>
+    </div>
+  );
+}
+
+// Doughnut with the total in the center and a legend on the side
+function Donut({ rows, unit = "transactions", empty }) {
+  if (!rows.length) return <EmptyChart text={empty} />;
+  const MAX = 7;
+  const data = rows.length > MAX
+    ? [...rows.slice(0, MAX), { label: "Others", value: rows.slice(MAX).reduce((s, r) => s + r.value, 0) }]
+    : rows;
+  const total = data.reduce((s, r) => s + r.value, 0);
+
+  return (
+    <div className="flex flex-col items-center gap-5 sm:flex-row">
+      <div className="relative h-[220px] w-full shrink-0 sm:w-[220px]">
+        <ResponsiveContainer debounce={200} width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data} dataKey="value" nameKey="label"
+              innerRadius="62%" outerRadius="94%" paddingAngle={3} cornerRadius={6} stroke="none"
+            >
+              {data.map((r, i) => <Cell key={r.label} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
+            </Pie>
+            <Tooltip content={<DonutTooltip total={total} unit={unit} />} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <strong className="text-3xl font-bold tabular-nums text-[#4a1f1f]">{total}</strong>
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{unit}</span>
+        </div>
+      </div>
+
+      <ul className="w-full min-w-0 flex-1 space-y-1.5">
+        {data.map((r, i) => (
+          <li key={r.label} className="flex items-center gap-2.5 rounded-lg bg-[#faf6f0] px-3 py-1.5 text-[13px]">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+            <span className="min-w-0 flex-1 truncate font-semibold">{r.label}</span>
+            <span className="font-bold tabular-nums text-[#4a1f1f]">{r.value}</span>
+            <span className="w-9 text-right text-xs tabular-nums text-gray-500">{Math.round((r.value / total) * 100)}%</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// Real line chart (the Overview keeps its area chart)
+function TrendLine({ labels, values, height = 260 }) {
+  const data = labels.map((label, i) => ({ label, value: values[i] }));
+  const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+  const dots = data.length <= 31;
+
+  return (
+    <ResponsiveContainer debounce={200} width="100%" height={height}>
+      <RLineChart data={data} margin={{ top: 12, right: 12, left: -20, bottom: 0 }}>
+        <CartesianGrid {...GRID_PROPS} />
+        <XAxis dataKey="label" tick={AXIS_TICK_SM} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+        <YAxis tick={AXIS_TICK_SM} axisLine={false} tickLine={false} allowDecimals={false} />
+        <Tooltip content={<ChartTooltip unit="borrowings" />} cursor={{ stroke: "#E5E7EB", strokeWidth: 1 }} />
+        <ReferenceLine
+          y={avg} stroke="#7C3AED" strokeDasharray="5 4" strokeWidth={1.5}
+          label={{ value: "avg", fill: "#7C3AED", fontSize: 10, position: "insideTopRight" }}
+        />
+        <Line
+          type="monotone" dataKey="value" stroke="#4a1f1f" strokeWidth={3}
+          dot={dots ? { r: 3.5, fill: "#fff", stroke: "#4a1f1f", strokeWidth: 2 } : false}
+          activeDot={{ r: 6, fill: "#eea51c", stroke: "#4a1f1f", strokeWidth: 2 }}
+        />
+      </RLineChart>
+    </ResponsiveContainer>
+  );
+}
+
+const CatSelect = ({ value, onChange }) => (
+  <select className={`${selectSm} max-w-[150px]`} aria-label="Filter by category" value={value} onChange={(e) => onChange(e.target.value)}>
+    <option value="All">All categories</option>
+    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+  </select>
+);
+
+const TopSelect = ({ value, onChange }) => (
+  <select className={selectSm} aria-label="Number of results" value={value} onChange={(e) => onChange(+e.target.value)}>
+    <option value={5}>Top 5</option>
+    <option value={10}>Top 10</option>
+  </select>
+);
+
+function Analytics({ books, transactions, students }) {
+  const [range, setRange] = useState("month");
+  const [from, setFrom] = useState(() => addDays(localISO(), -29));
+  const [to, setTo] = useState(() => localISO());
+  const [bookTop, setBookTop] = useState(5);
+  const [bookCat, setBookCat] = useState("All");
+  const [bookSub, setBookSub] = useState("All");
+  const [subTop, setSubTop] = useState(5);
+  const [subCat, setSubCat] = useState("All");
+  const [trendCat, setTrendCat] = useState("All");
+  const [trendDept, setTrendDept] = useState("All");
+  const [deptCat, setDeptCat] = useState("All");
+  const [role, setRole] = useState("all");
+
+  const { start, end } = resolveRange(range, from, to);
+  const booksById = new Map(books.map((b) => [b.id, b]));
+  const usersByEmail = new Map(students.map((s) => [s.email, s]));
+
+  // One row per approved borrowing transaction (returned loans included, so history is kept).
+  const rows = transactions.map((t) => {
+    const b = booksById.get(t.bookId);
+    const u = usersByEmail.get(t.borrowerEmail);
+    return {
+      date: String(t.borrowedOn || "").slice(0, 10),
+      bookId: t.bookId,
+      title: t.title,
+      category: b?.category || "Uncategorized",
+      subcategory: b?.subcategory || "",
+      email: t.borrowerEmail,
+      dept: deptOf(u),
+      role: u?.role === "professor" ? "faculty" : "student",
+    };
+  });
+  const scoped = rows.filter((r) => r.date && r.date >= start && r.date <= end);
+
+  const subsOf = (cat) =>
+    [...new Set(books.filter((b) => cat === "All" || b.category === cat).map((b) => b.subcategory).filter(Boolean))].sort();
+  const allDepts = [...new Set(rows.map((r) => r.dept))].sort();
+
+  // 1. Top borrowed books
+  const topBooks = tally(
+    scoped.filter((r) => (bookCat === "All" || r.category === bookCat) && (bookSub === "All" || r.subcategory === bookSub)),
+    (r) => r.title
+  ).slice(0, bookTop);
+
+  // 2. Category
+  const byCategory = tally(scoped, (r) => r.category);
+
+  // 3. Subcategory
+  const bySub = tally(scoped.filter((r) => subCat === "All" || r.category === subCat), (r) => r.subcategory).slice(0, subTop);
+
+  // 4. Trend
+  const { buckets, unit } = buildBuckets(start, end);
+  const trendRows = scoped.filter((r) => (trendCat === "All" || r.category === trendCat) && (trendDept === "All" || r.dept === trendDept));
+  const trendValues = buckets.map((b) => trendRows.filter((r) => r.date >= b.start && r.date <= b.end).length);
+  const trendTotal = trendValues.reduce((s, v) => s + v, 0);
+
+  // 5. Department borrowing
+  const byDept = tally(scoped.filter((r) => deptCat === "All" || r.category === deptCat), (r) => r.dept);
+
+  // 6. Unique borrowers by department
+  const uniq = new Map();
+  scoped.forEach((r) => {
+    if (!uniq.has(r.dept)) uniq.set(r.dept, new Set());
+    uniq.get(r.dept).add(r.email);
+  });
+  const uniqueByDept = [...uniq]
+    .map(([label, set]) => ({ label, value: set.size }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+
+  // 7. Engagement: unique borrowers / registered users in the department
+  const roleOk = (rl) => role === "all" || rl === role;
+  const eligible = new Map();
+  students.forEach((s) => {
+    if (!roleOk(s.role === "professor" ? "faculty" : "student")) return;
+    const d = deptOf(s);
+    if (d !== "Unassigned") eligible.set(d, (eligible.get(d) || 0) + 1);
+  });
+  const borrowersIn = new Map();
+  scoped.filter((r) => roleOk(r.role)).forEach((r) => {
+    if (!borrowersIn.has(r.dept)) borrowersIn.set(r.dept, new Set());
+    borrowersIn.get(r.dept).add(r.email);
+  });
+  const engagement = [...eligible]
+    .map(([label, total]) => {
+      const b = borrowersIn.get(label)?.size || 0;
+      return { label, value: Math.round((b / total) * 1000) / 10, sub: `(${b} of ${total})` };
+    })
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+
+  const pill = (on) =>
+    `cursor-pointer rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition ${
+      on ? "border-[#4a1f1f] bg-[#4a1f1f] text-white" : "border-[#4a1f1f]/25 bg-white text-[#4a1f1f] hover:bg-[#faf6f0]"
+    }`;
+
+  const kpis = [
+    ["Borrowing transactions", scoped.length],
+    ["Unique borrowers", new Set(scoped.map((r) => r.email)).size],
+    ["Different books borrowed", new Set(scoped.map((r) => r.bookId)).size],
+  ];
+
+  return (
+    <section className="mb-10">
+      <h2 className="mb-0.5 text-xl font-bold">Analytics</h2>
+      <p className="mb-4 text-[13px] text-gray-500">
+        {fmt(start)}{start !== end ? ` to ${fmt(end)}` : ""}
+      </p>
+
+      <div className="mb-5 rounded-2xl border border-[#4a1f1f]/15 bg-[#faf6f0] p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          {RANGES.map(([k, label]) => (
+            <button key={k} type="button" className={pill(range === k)} onClick={() => setRange(k)}>{label}</button>
+          ))}
+          {range === "custom" && (
+            <div className="flex flex-wrap items-center gap-2 text-[13px]">
+              <input type="date" className={selectSm} max={localISO()} value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From date" />
+              <span>to</span>
+              <input type="date" className={selectSm} max={localISO()} value={to} onChange={(e) => setTo(e.target.value)} aria-label="To date" />
+            </div>
+          )}
+        </div>
+        <p className="mt-2 text-xs text-gray-500">The date range applies to every chart below and uses the borrow date.</p>
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {kpis.map(([label, value]) => (
+          <div key={label} className="rounded-2xl border border-black/5 bg-[#e4f1ee] px-5 py-4 shadow-sm">
+            <span className="block text-xs font-semibold uppercase tracking-wide text-[#1b1b1b]/70">{label}</span>
+            <strong className="text-3xl font-bold tabular-nums">{value}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <ChartCard
+          wide
+          title="Borrowing Trends Over Time"
+          purpose={`${unit} borrowing transactions. Shows patterns, seasonal demand and busy periods.`}
+          controls={
+            <>
+              <CatSelect value={trendCat} onChange={setTrendCat} />
+              <select className={`${selectSm} max-w-[170px]`} aria-label="Filter by department" value={trendDept} onChange={(e) => setTrendDept(e.target.value)}>
+                <option value="All">All departments</option>
+                {allDepts.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </>
+          }
+        >
+          {trendTotal === 0 ? (
+            <EmptyChart />
+          ) : (
+            <TrendLine labels={buckets.map((b) => b.label)} values={trendValues} />
+          )}
+        </ChartCard>
+
+        <ChartCard
+          title="Top Borrowed Books"
+          purpose="Popular titles. Helps decide which books need more copies."
+          controls={
+            <>
+              <CatSelect value={bookCat} onChange={(v) => { setBookCat(v); setBookSub("All"); }} />
+              <select className={`${selectSm} max-w-[150px]`} aria-label="Filter by subcategory" value={bookSub} onChange={(e) => setBookSub(e.target.value)}>
+                <option value="All">All subcategories</option>
+                {subsOf(bookCat).map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <TopSelect value={bookTop} onChange={setBookTop} />
+            </>
+          }
+        >
+          <HBars rows={topBooks} color="#4a1f1f" />
+        </ChartCard>
+
+        <ChartCard title="Borrowing by Category" purpose="Most borrowed subject areas, highest to lowest. Guides collection development.">
+          <Donut rows={byCategory} />
+        </ChartCard>
+
+        <ChartCard
+          title="Borrowing by Subcategory"
+          purpose="Specific subjects in high demand. Books without a subcategory are not counted."
+          controls={
+            <>
+              <CatSelect value={subCat} onChange={setSubCat} />
+              <TopSelect value={subTop} onChange={setSubTop} />
+            </>
+          }
+        >
+          <HBars rows={bySub} color="#eea51c" />
+        </ChartCard>
+
+        <ChartCard
+          title="Borrowing by Academic Department"
+          purpose="Which departments generate the most borrowing transactions."
+          controls={<CatSelect value={deptCat} onChange={setDeptCat} />}
+        >
+          <Donut rows={byDept} />
+        </ChartCard>
+
+        <ChartCard title="Unique Borrowers by Department" purpose="Distinct people who borrowed at least once. Repeat loans count once.">
+          <VBars rows={uniqueByDept} color="#0c7a43" unit="borrowers" />
+        </ChartCard>
+
+        <ChartCard
+          wide
+          title="Borrowing Engagement by Department"
+          purpose="Share of registered users in each department who borrowed at least one book."
+          controls={
+            <select className={selectSm} aria-label="Filter by user role" value={role} onChange={(e) => setRole(e.target.value)}>
+              <option value="all">All users</option>
+              <option value="student">Students</option>
+              <option value="faculty">Faculty</option>
+            </select>
+          }
+        >
+          <VBars rows={engagement} color="#4a1f1f" suffix="%" unit="engagement" max={100} empty="No registered users with a department match these filters." />
+        </ChartCard>
+      </div>
+    </section>
+  );
+}
+
 // ---------- Profile ----------
 function EditProfileModal({ profile, onClose, onSaved }) {
   const [f, setF] = useState({ firstName: profile.firstName || "", lastName: profile.lastName || "", phone: profile.phone || "" });
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState("");
   const phone = f.phone.replace(/[\s-]/g, "");
+  const changed =
+    f.firstName.trim() !== (profile.firstName || "").trim() ||
+    f.lastName.trim() !== (profile.lastName || "").trim() ||
+    phone !== (profile.phone || "").replace(/[\s-]/g, "");
   const errors = {
     firstName: !f.firstName.trim() && "Required",
     lastName: !f.lastName.trim() && "Required",
@@ -1359,7 +2404,7 @@ function EditProfileModal({ profile, onClose, onSaved }) {
   const bind = (k) => ({
     value: f[k],
     onChange: (e) => setF({ ...f, [k]: e.target.value }),
-    className: `${inputBase} ${touched && errors[k] ? "border-[#c0121f]" : "border-[#2b2b2b]"}`,
+    className: `${inputBase} ${touched && errors[k] ? "border-[#c0121f]" : "border-[#4a1f1f]/25 focus:border-[#4a1f1f]"}`,
   });
   return (
     <Modal title="Edit Profile" titleId="edit-profile-title" onClose={onClose} small>
@@ -1368,9 +2413,16 @@ function EditProfileModal({ profile, onClose, onSaved }) {
         <Field label="Last name" error={touched && errors.lastName}><input type="text" {...bind("lastName")} /></Field>
         <Field label="Phone" error={touched && errors.phone}><input type="tel" {...bind("phone")} /></Field>
         {error && <p className="text-[12.5px] font-semibold text-[#c0121f]" role="alert">{error}</p>}
-        <div className="grid grid-cols-2 gap-6">
-          <button type="submit" className={btnPrimary}>Save</button>
+        <div className="grid grid-cols-2 gap-4">
           <button type="button" className={btnSecondary} onClick={onClose}>Cancel</button>
+          <button
+            type="submit"
+            className={btnPrimary}
+            disabled={!changed}
+            title={!changed ? "No changes to save" : undefined}
+          >
+            Save
+          </button>
         </div>
       </form>
     </Modal>
@@ -1401,7 +2453,7 @@ function PasswordModal({ onClose, onDone }) {
     type: "password",
     value: f[k],
     onChange: (e) => setF({ ...f, [k]: e.target.value }),
-    className: `${inputBase} ${touched && errors[k] ? "border-[#c0121f]" : "border-[#2b2b2b]"}`,
+    className: `${inputBase} ${touched && errors[k] ? "border-[#c0121f]" : "border-[#4a1f1f]/25 focus:border-[#4a1f1f]"}`,
   });
   return (
     <Modal title="Change Password" titleId="password-title" onClose={onClose} small>
@@ -1410,9 +2462,9 @@ function PasswordModal({ onClose, onDone }) {
         <Field label="New password" error={touched && errors.next}><input {...bind("next")} /></Field>
         <Field label="Confirm new password" error={touched && errors.conf}><input {...bind("conf")} /></Field>
         {error && <p className="text-[12.5px] font-semibold text-[#c0121f]" role="alert">{error}</p>}
-        <div className="grid grid-cols-2 gap-6">
-          <button type="submit" className={btnPrimary}>Update</button>
+        <div className="grid grid-cols-2 gap-4">
           <button type="button" className={btnSecondary} onClick={onClose}>Cancel</button>
+          <button type="submit" className={btnPrimary} disabled={!f.cur && !f.next && !f.conf}>Update</button>
         </div>
       </form>
     </Modal>
@@ -1494,9 +2546,9 @@ function ProfileTab({ profile: u, onChange, notify }) {
         <Modal title="Log out?" titleId="logout-title" small onClose={() => setModal(null)}>
           <div className="px-6 pt-[22px] pb-[26px]">
             <p className="mb-[18px] text-sm">Are you sure you want to log out?</p>
-            <div className="grid grid-cols-2 gap-6">
-              <button className={btnDanger} onClick={logout}>Log out</button>
+            <div className="grid grid-cols-2 gap-4">
               <button className={btnSecondary} onClick={() => setModal(null)}>Cancel</button>
+              <button className={btnDanger} onClick={logout}>Log out</button>
             </div>
           </div>
         </Modal>
@@ -1560,7 +2612,8 @@ function ConfirmModal({ title, message, confirmLabel = "Yes", danger, run, onCan
     <Modal title={title} titleId="confirm-title" describedBy="confirm-desc" role="alertdialog" small onClose={() => !busy && onCancel()}>
       <div className="px-6 pt-[22px] pb-[26px]">
         <p id="confirm-desc" className="mb-[18px] text-sm leading-normal">{message}</p>
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-2 gap-4">
+          <button type="button" className={btnSecondary} onClick={onCancel} disabled={busy}>Cancel</button>
           <button
             type="button"
             className={danger ? btnDanger : btnPrimary}
@@ -1572,7 +2625,6 @@ function ConfirmModal({ title, message, confirmLabel = "Yes", danger, run, onCan
           >
             {busy ? "Working..." : confirmLabel}
           </button>
-          <button type="button" className={btnSecondary} onClick={onCancel} disabled={busy}>Cancel</button>
         </div>
       </div>
     </Modal>
@@ -1580,7 +2632,7 @@ function ConfirmModal({ title, message, confirmLabel = "Yes", danger, run, onCan
 }
 
 // ---------- Return confirmation ----------
-function ReturnModal({ tx, onCancel, onConfirm }) {
+function ReturnModal({ tx, book, onCancel, onConfirm }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && !busy && onCancel();
@@ -1589,17 +2641,20 @@ function ReturnModal({ tx, onCancel, onConfirm }) {
   }, [onCancel, busy]);
 
   return (
-    <Modal title="Mark as Returned" titleId="return-title" describedBy="return-desc" role="alertdialog" small onClose={onCancel}>
-      <div className="px-6 pt-[22px] pb-[26px]">
-        <p id="return-desc" className="mb-3 text-sm leading-normal">
+    <Modal title="Mark as Returned" titleId="return-title" describedBy="return-desc" role="alertdialog" onClose={onCancel}>
+      <div className="flex flex-col gap-3.5 px-6 pt-[22px] pb-[26px]">
+        <p id="return-desc" className="text-sm leading-normal">
           Mark <strong>{tx.title}</strong> as returned by <strong>{tx.borrower}</strong>?
         </p>
+        {book && <BookInfoCard book={book} />}
+        <p className="text-xs text-gray-500">Borrowed {fmt(tx.borrowedOn)} · Due {fmt(tx.due)}</p>
         {tx.overdue && (
-          <p className="mb-3 rounded-lg bg-[#c0121f]/10 p-3 text-[13px] font-semibold text-[#c0121f]">
+          <p className="rounded-lg bg-[#c0121f]/10 p-3 text-[13px] font-semibold text-[#c0121f]">
             This book is {tx.daysOverdue} {tx.daysOverdue === 1 ? "day" : "days"} late. A fine of {peso(tx.fine)} will be recorded.
           </p>
         )}
-        <div className="mt-[18px] grid grid-cols-2 gap-6">
+        <div className="mt-1.5 grid grid-cols-2 gap-4">
+          <button type="button" className={btnSecondary} onClick={onCancel} disabled={busy}>Cancel</button>
           <button
             type="button"
             className={btnPrimary}
@@ -1608,7 +2663,6 @@ function ReturnModal({ tx, onCancel, onConfirm }) {
           >
             {busy ? "Returning..." : "Yes, return"}
           </button>
-          <button type="button" className={btnSecondary} onClick={onCancel} disabled={busy}>Cancel</button>
         </div>
       </div>
     </Modal>
@@ -1731,7 +2785,7 @@ function VerifyReturnModal({ onClose, onDone }) {
                     placeholder="e.g. 1234 5678"
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
-                    className={`${inputBase} border-[#2b2b2b] font-mono text-base tracking-widest`}
+                    className={`${inputBase} border-[#4a1f1f]/25 font-mono text-base tracking-widest focus:border-[#4a1f1f]`}
                   />
                 </Field>
                 <button type="submit" className={btnPrimary} disabled={busy}>{busy ? "Verifying..." : "Verify"}</button>
@@ -1761,16 +2815,16 @@ function ApproveModal({ request, onCancel, onConfirm }) {
           Are you sure you want to approve <strong>{request.title}</strong> for <strong>{request.borrower}</strong>?
           The loan starts today and is due in {LOAN_DAYS} days.
         </p>
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-2 gap-4">
+          <button type="button" className={btnSecondary} onClick={onCancel} disabled={busy}>Cancel</button>
           <button
             type="button"
-            className={btnPrimary}
+            className={btnApprove}
             disabled={busy}
             onClick={async () => { setBusy(true); await onConfirm(); }}
           >
             {busy ? "Approving..." : "Yes, approve"}
           </button>
-          <button type="button" className={btnSecondary} onClick={onCancel} disabled={busy}>Cancel</button>
         </div>
       </div>
     </Modal>
@@ -1830,7 +2884,7 @@ function DeclineModal({ request, onCancel, onConfirm }) {
             value={choice}
             onChange={(e) => setChoice(e.target.value)}
             onBlur={() => setTouched(true)}
-            className={`${inputBase} ${touched && !choice ? "border-[#c0121f]" : "border-[#2b2b2b]"} ${choice ? "text-[#1b1b1b]" : "text-gray-400"}`}
+            className={`${inputBase} ${touched && !choice ? "border-[#c0121f]" : "border-[#4a1f1f]/25 focus:border-[#4a1f1f]"} ${choice ? "text-[#1b1b1b]" : "text-gray-400"}`}
           >
             <option value="" disabled>Choose a reason</option>
             {DECLINE_REASONS.map((r) => (
@@ -1855,21 +2909,91 @@ function DeclineModal({ request, onCancel, onConfirm }) {
               onChange={(e) => setReason(e.target.value)}
               onBlur={() => setTouched(true)}
               placeholder="Write the reason for the borrower."
-              className={`${inputBase} min-h-[100px] resize-y ${touched && error ? "border-[#c0121f]" : "border-[#2b2b2b]"}`}
+              className={`${inputBase} min-h-[100px] resize-y ${touched && error ? "border-[#c0121f]" : "border-[#4a1f1f]/25 focus:border-[#4a1f1f]"}`}
             />
           </Field>
         )}
-        <div className="grid grid-cols-2 gap-6">
-          <button type="submit" className={btnDanger} disabled={busy}>{busy ? "Declining..." : "Decline"}</button>
+        <div className="grid grid-cols-2 gap-4">
           <button type="button" className={btnSecondary} onClick={onCancel} disabled={busy}>Cancel</button>
+          <button type="submit" className={btnDanger} disabled={busy}>{busy ? "Declining..." : "Decline"}</button>
         </div>
       </form>
     </Modal>
   );
 }
 
+// ---------- Book details (read-only) ----------
+function BookDetailModal({ book, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const left = copiesLeft(book);
+  const info = [
+    ["Category", book.category ? `${book.category}${book.subcategory ? ` · ${book.subcategory}` : ""}` : ""],
+    ["Publisher", book.publisher],
+    ["ISBN", book.isbn],
+    ["Pages", book.pages],
+    ["Published", book.published ? fmt(book.published) : ""],
+    ["Shelf / Location", book.shelf],
+    ["Available", book.totalCopies != null ? `${left} of ${book.totalCopies}` : ""],
+  ].filter(([, v]) => v !== "" && v != null);
+
+  return (
+    <Modal title="Book details" titleId="book-detail-title" onClose={onClose}>
+      <div className="flex flex-col gap-4 px-6 py-5 text-[13px]">
+        <div className="flex gap-4">
+          {book.image ? (
+            <img
+              src={book.image}
+              alt=""
+              referrerPolicy="no-referrer"
+              className="h-[120px] w-[84px] shrink-0 rounded-md object-cover shadow-md ring-1 ring-black/10"
+            />
+          ) : (
+            <div className="relative h-[120px] w-[84px] shrink-0 overflow-hidden rounded-md bg-[#4a1f1f] shadow-md">
+              <span className="absolute inset-x-2 bottom-5 h-2 rounded-sm bg-[#eea51c]" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <h3 className="break-words text-lg font-bold leading-tight text-[#4a1f1f]">{book.title}</h3>
+            {book.author && <p className="mt-1 text-gray-500">by {book.author}</p>}
+            {book.totalCopies != null && (
+              <span
+                className={`mt-2 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${
+                  left > 0 ? BADGE_COLORS.available : BADGE_COLORS.overdue
+                }`}
+              >
+                {left > 0 ? "Available" : "No copies left"}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {info.length > 0 && (
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-xl border border-[#4a1f1f]/20 bg-[#faf6f0] p-3 text-xs">
+            {info.map(([label, value]) => (
+              <div key={label} className="min-w-0">
+                <dt className="text-gray-500">{label}</dt>
+                <dd className="break-words font-semibold">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+
+        <div>
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-400">About this book</h4>
+          <p className="mt-1.5 leading-relaxed text-gray-700">{book.description || "No description available."}</p>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ---------- Borrow requests page ----------
-function RequestsTab({ requests, books, students, onDecide, onViewBorrower }) {
+function RequestsTab({ requests, books, students, onDecide, onViewBorrower, onViewBook }) {
   const [confirm, setConfirm] = useState(null); // { request, approve }
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(() => new Set());
@@ -1907,12 +3031,11 @@ function RequestsTab({ requests, books, students, onDecide, onViewBorrower }) {
       </p>
 
       {requests.length > 0 && (
-        <input
-          type="search"
+        <SearchInput
+          className="mb-3 w-full md:w-80"
           placeholder="Search by book, name, or email"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setPage(1); }}
-          className={`${selectSm} mb-3 w-full md:w-80`}
         />
       )}
 
@@ -1927,12 +3050,25 @@ function RequestsTab({ requests, books, students, onDecide, onViewBorrower }) {
             const book = books.find((b) => b.id === r.bookId);
             return (
               <div key={r.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#4a1f1f]/20 bg-white p-3">
-                <Cover colors={r.cover} image={book?.image} />
+                <button
+                  type="button"
+                  onClick={() => onViewBook(book ?? { id: r.bookId, title: r.title })}
+                  aria-label={`View ${r.title}`}
+                  className="cursor-pointer rounded-[3px] border-0 bg-transparent p-0 transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#eea51c]/60"
+                >
+                  <Cover colors={r.cover} image={book?.image} />
+                </button>
                 <button type="button" onClick={() => onViewBorrower(r.borrowerEmail)} aria-label={`View ${r.borrower}`} className="cursor-pointer rounded-full border-0 bg-transparent p-0">
                   <Avatar src={students.find((s) => s.email === r.borrowerEmail)?.avatar} name={r.borrower} className="h-9 w-9" />
                 </button>
                 <div className="min-w-0 flex-1">
-                  <strong className="block">{r.title}</strong>
+                  <button
+                    type="button"
+                    onClick={() => onViewBook(book ?? { id: r.bookId, title: r.title })}
+                    className="block cursor-pointer border-0 bg-transparent p-0 text-left font-bold hover:underline"
+                  >
+                    {r.title}
+                  </button>
                   <button type="button" onClick={() => onViewBorrower(r.borrowerEmail)} className="block cursor-pointer border-0 bg-transparent p-0 text-left text-[13px] text-[#0b4a8b] hover:underline">
                     {r.borrower} ({r.borrowerEmail})
                   </button>
@@ -1947,11 +3083,11 @@ function RequestsTab({ requests, books, students, onDecide, onViewBorrower }) {
                   <button
                     disabled={isBusy}
                     onClick={() => setConfirm({ request: r, approve: false })}
-                    className={`${btnBase} border border-[#c0121f] bg-white text-[#c0121f] hover:bg-red-50`}
+                    className={btnDecline}
                   >
                     Decline
                   </button>
-                  <button disabled={isBusy} onClick={() => setConfirm({ request: r, approve: true })} className={btnPrimary}>
+                  <button disabled={isBusy} onClick={() => setConfirm({ request: r, approve: true })} className={btnApprove}>
                     {isBusy ? "Working..." : "Approve"}
                   </button>
                 </div>
@@ -2017,6 +3153,9 @@ export default function HomeLibrarian() {
   const [profile, setProfile] = useState(null);
   const [toast, setToast] = useState("");
   const [bookSort, setBookSort] = useState({ key: "title", dir: "asc" });
+  const [bookView, setBookView] = useState(null);
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [subFilter, setSubFilter] = useState("All");
 
   const notify = (m) => {
     setToast(m);
@@ -2071,8 +3210,17 @@ export default function HomeLibrarian() {
   }, []);
 
   const q = query.trim().toLowerCase();
+  const subOptions = [...new Set(
+    books
+      .filter((b) => categoryFilter === "All" || b.category === categoryFilter)
+      .map((b) => b.subcategory)
+      .filter(Boolean)
+  )].sort();
   const filteredBooks = books.filter(
-    (b) => !q || b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q)
+    (b) =>
+      (!q || [b.title, b.author, b.publisher, b.category, b.subcategory].some((f) => (f || "").toLowerCase().includes(q))) &&
+      (categoryFilter === "All" || b.category === categoryFilter) &&
+      (subFilter === "All" || b.subcategory === subFilter)
   );
 
   const activeFor = (id) => transactions.filter((t) => t.bookId === id && !isReturned(t)).length;
@@ -2177,19 +3325,32 @@ export default function HomeLibrarian() {
   const txCount = (f) => transactions.filter((t) => matchesStatus(t, f)).length;
 
   const bookCols = [
-    { key: "cover", label: "", render: (r) => <Cover colors={r.cover} image={r.image} /> },
-    { key: "title", label: "Title", sortable: true, render: (r) => <strong>{r.title}</strong> },
+    { key: "cover", label: "", render: (r) => <Cover colors={r.cover} image={r.image} size="lg" /> },
+    {
+      key: "title",
+      label: "Title",
+      sortable: true,
+      render: (r) => (
+        <button
+          type="button"
+          onClick={() => setBookView(r)}
+          className="block min-w-[140px] cursor-pointer border-0 bg-transparent p-0 font-bold hover:underline"
+        >
+          {r.title}
+        </button>
+      ),
+    },
     { key: "author", label: "Author", sortable: true },
     { key: "publisher", label: "Publisher", sortable: true },
-    { key: "category", label: "Category", sortable: true },
-    { key: "subcategory", label: "Subcategory", sortable: true, render: (r) => r.subcategory || "-" },
+    { key: "category", label: "Category", plain: true },
+    { key: "subcategory", label: "Subcategory", plain: true, render: (r) => r.subcategory || "-" },
     { key: "published", label: "Published Date", sortable: true, render: (r) => fmt(r.published) },
     { key: "status", label: "Status", sortable: true, render: (r) => <Badge status={r.status} /> },
     {
       key: "actions",
       label: "Actions",
       render: (r) => (
-        <span className="inline-flex gap-2.5">
+        <span className="inline-flex items-center gap-2.5">
           <button
             aria-label={`Edit ${r.title}`}
             className="inline-flex cursor-pointer border-0 bg-transparent p-0.5 text-[#1b1b1b] hover:opacity-70"
@@ -2204,6 +3365,14 @@ export default function HomeLibrarian() {
           >
             <TrashIcon />
           </button>
+          <button
+            type="button"
+            className={btnIssue}
+            disabled={copiesLeft(r) < 1}
+            onClick={() => setIssueCtx({ book: r })}
+          >
+            Issue
+          </button>
         </span>
       ),
     },
@@ -2211,8 +3380,34 @@ export default function HomeLibrarian() {
 
   const txCols = [
     { key: "cover", label: "", render: (r) => <Cover colors={r.cover} image={books.find((b) => b.id === r.bookId)?.image} /> },
-    { key: "title", label: "Title", sortable: true, render: (r) => <strong>{r.title}</strong> },
-    { key: "borrower", label: "Borrower", sortable: true },
+    {
+      key: "title",
+      label: "Title",
+      sortable: true,
+      render: (r) => (
+        <button
+          type="button"
+          onClick={() => setBookView(books.find((b) => b.id === r.bookId) ?? { id: r.bookId, title: r.title })}
+          className="cursor-pointer border-0 bg-transparent p-0 font-bold hover:underline"
+        >
+          {r.title}
+        </button>
+      ),
+    },
+    {
+      key: "borrower",
+      label: "Borrower",
+      sortable: true,
+      render: (r) => (
+        <button
+          type="button"
+          onClick={() => setStudentEmail(r.borrowerEmail)}
+          className="cursor-pointer border-0 bg-transparent p-0 text-[#0b4a8b] hover:underline"
+        >
+          {r.borrower}
+        </button>
+      ),
+    },
     { key: "borrowedOn", label: "Borrowed On", sortable: true, render: (r) => fmt(r.borrowedOn) },
     { key: "due", label: "Due", sortable: true, render: (r) => fmt(r.due) },
     { key: "returned", label: "Return Date", sortable: true, render: (r) => fmt(r.returned) },
@@ -2263,6 +3458,7 @@ export default function HomeLibrarian() {
   const onAction = (k) => {
     if (k === "issue") setIssueCtx({});
     else if (k === "requests") setTab("requests");
+    else if (k === "analytics") setTab("analytics");
     else if (k === "catalog") { setBookSort({ key: "title", dir: "asc" }); setTab("books"); }
     else if (k === "returns") setShowVerify(true);
     else if (k === "history" || k === "overdue") {
@@ -2296,12 +3492,12 @@ export default function HomeLibrarian() {
           </div>
         )}
 
-        <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-[#4a1f1f]/15" aria-label="Sections">
+        <nav className="sticky top-[80px] z-30 mb-6 flex gap-1 overflow-x-auto overflow-y-hidden rounded-xl border border-[#4a1f1f]/15 bg-white/95 px-2 shadow-sm backdrop-blur" aria-label="Sections">
           {TABS.map(([k, label]) => (
             <button
               key={k}
               onClick={() => { if (k === "books") setBookSort({ key: "title", dir: "asc" }); setTab(k); }}
-              className={`-mb-px cursor-pointer whitespace-nowrap border-0 border-b-2 bg-transparent px-4 py-3 text-sm font-semibold transition-colors ${
+              className={`cursor-pointer whitespace-nowrap border-0 border-b-2 bg-transparent px-4 py-3 text-sm font-semibold transition-colors ${
                 tab === k ? "border-[#eea51c] text-[#4a1f1f]" : "border-transparent text-gray-500 hover:text-[#4a1f1f]"
               }`}
             >
@@ -2326,24 +3522,13 @@ export default function HomeLibrarian() {
           <Overview books={books} transactions={transactions} requests={requests} onAction={onAction} onStat={goStat} />
         )}
 
-        {tab === "requests" && <RequestsTab requests={requests} books={books} students={students} onDecide={decide} onViewBorrower={setStudentEmail} />}
+        {tab === "requests" && <RequestsTab requests={requests} books={books} students={students} onDecide={decide} onViewBorrower={setStudentEmail} onViewBook={setBookView} />}
+
+        {tab === "analytics" && <Analytics books={books} transactions={transactions} students={students} />}
 
         {tab === "books" && (
           <section className="mb-10">
-            <div className="mb-3 flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between">
-              <h2 className="text-xl font-bold">Book Catalog</h2>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="search"
-                  placeholder="Search by title or author"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  className={`${selectSm} w-full md:w-60`}
-                />
-                <button className={btnSecondary} onClick={() => setShowImport(true)}>Bulk Import</button>
-                <button className={btnPrimary} onClick={() => setShowModal(true)}>+ Add Book</button>
-              </div>
-            </div>
+            <h2 className="mb-0.5 text-xl font-bold">Book Catalog</h2>
             <p className="mb-2 text-[13px] text-gray-500">
               {filteredBooks.length} {filteredBooks.length === 1 ? "title" : "titles"} in the catalog
             </p>
@@ -2351,21 +3536,46 @@ export default function HomeLibrarian() {
               key={`${bookSort.key}-${bookSort.dir}`}
               columns={[
                 ...bookCols.slice(0, -2),
-                { key: "copies", label: "Copies", render: (r) => `${copiesLeft(r)} of ${r.totalCopies ?? 1}` },
+                { key: "copies", label: "Copies", plain: true, render: (r) => `${copiesLeft(r)} of ${r.totalCopies ?? 1}` },
                 ...bookCols.slice(-2),
-                {
-                  key: "issue",
-                  label: "Issue",
-                  render: (r) => (
-                    <button className={`${btnSmall} py-1.5`} disabled={copiesLeft(r) < 1} onClick={() => setIssueCtx({ book: r })}>
-                      Issue
-                    </button>
-                  ),
-                },
               ]}
               rows={filteredBooks}
-              resetKey={query}
+              resetKey={`${query}|${categoryFilter}|${subFilter}`}
               defaultSort={bookSort}
+              filters={
+                <>
+                  <select
+                    className={`${selectSm} max-w-[130px]`}
+                    aria-label="Filter by category"
+                    value={categoryFilter}
+                    onChange={(e) => { setCategoryFilter(e.target.value); setSubFilter("All"); }}
+                  >
+                    <option value="All">All Categories</option>
+                    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <select
+                    className={`${selectSm} max-w-[130px]`}
+                    aria-label="Filter by subcategory"
+                    value={subFilter}
+                    onChange={(e) => setSubFilter(e.target.value)}
+                  >
+                    <option value="All">All Subcategories</option>
+                    {subOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </>
+              }
+              toolbar={
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                  <SearchInput
+                    className="w-full sm:w-48"
+                    placeholder="Search books"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                  <button className={btnImport} onClick={() => setShowImport(true)}>Bulk Import</button>
+                  <button className={btnAdd} onClick={() => setShowModal(true)}>+ Add Book</button>
+                </div>
+              }
               emptyText={loading ? "Loading books..." : books.length === 0 ? "No books yet. Select + Add Book to add one." : undefined}
             />
           </section>
@@ -2373,20 +3583,33 @@ export default function HomeLibrarian() {
 
         {tab === "borrowers" && (
           <section className="mb-10">
-            <div className="mb-4 flex gap-2">
-              <button className={chip(borrowerView === "lookup")} onClick={() => setBorrowerView("lookup")}>Lookup</button>
-              <button className={chip(borrowerView === "transactions")} onClick={() => setBorrowerView("transactions")}>Transactions</button>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[#4a1f1f]/15">
+              <div className="flex gap-1">
+                {[["lookup", "Lookup"], ["transactions", "Transactions"]].map(([k, label]) => (
+                  <button
+                    key={k}
+                    onClick={() => setBorrowerView(k)}
+                    className={`-mb-px cursor-pointer whitespace-nowrap border-0 border-b-2 bg-transparent px-4 py-3 text-sm font-semibold transition-colors ${
+                      borrowerView === k ? "border-[#eea51c] text-[#4a1f1f]" : "border-transparent text-gray-500 hover:text-[#4a1f1f]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {borrowerView === "lookup" && (
+                <SearchInput
+                  className="mb-2 w-full sm:w-72"
+                  placeholder="Search by name, email, or phone"
+                  value={studentQuery}
+                  onChange={(e) => { setStudentQuery(e.target.value); setStudentPage(1); }}
+                />
+              )}
             </div>
 
             {borrowerView === "lookup" && (
               <>
-                <input
-                  type="search"
-                  placeholder="Search by name, email, or phone"
-                  value={studentQuery}
-                  onChange={(e) => { setStudentQuery(e.target.value); setStudentPage(1); }}
-                  className={`${selectSm} mb-3 w-full md:w-80`}
-                />
+
                 {foundStudents.length === 0 ? (
                   <p className="p-6 text-center text-gray-500">No students found.</p>
                 ) : (
@@ -2407,7 +3630,7 @@ export default function HomeLibrarian() {
                             <span className="block text-xs text-gray-600">{s.phone}</span>
                           </span>
                           <span className="flex flex-col items-end gap-1">
-                            <span className="rounded-full bg-[#4a1f1f] px-2.5 py-[3px] text-[11px] font-bold text-white">{active.length}/{MAX_LOANS} books</span>
+                            <span className={`rounded-full ${loanTone(active.length)} px-2.5 py-[3px] text-[11px] font-bold text-white`}>{active.length}/{MAX_LOANS} books</span>
                             {od > 0 && <span className="rounded-full bg-[#c0121f] px-2.5 py-[3px] text-[11px] font-bold text-white">{od} overdue</span>}
                           </span>
                         </button>
@@ -2498,6 +3721,7 @@ export default function HomeLibrarian() {
           onDone={(msg) => { setShowImport(false); reload(); notify(msg); }}
         />
       )}
+      {bookView && <BookDetailModal book={bookView} onClose={() => setBookView(null)} />}
       {showNotes && <NotificationsModal notes={notes} onClear={clearNotes} onClose={() => setShowNotes(false)} />}
       {showVerify && (
         <VerifyReturnModal
@@ -2511,6 +3735,7 @@ export default function HomeLibrarian() {
       {toReturn && (
         <ReturnModal
           tx={toReturn}
+          book={books.find((b) => b.id === toReturn.bookId)}
           onCancel={() => setToReturn(null)}
           onConfirm={async () => { await returnTx(toReturn); setToReturn(null); }}
         />

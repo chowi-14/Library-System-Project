@@ -55,7 +55,7 @@ const validate = (v, role) => {
 }
 
 function Field({ label, name, value, error, editing, onChange, type = "text", options }) {
-    const cls = `mt-1 h-10 w-full rounded-sm border bg-white px-3 text-sm font-semibold outline-none ${
+    const cls = `mt-1 h-10 w-full rounded-lg border bg-white px-3 text-sm font-semibold outline-none ${
         error
             ? "border-red-700"
             : editing
@@ -93,6 +93,82 @@ function Field({ label, name, value, error, editing, onChange, type = "text", op
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"
 
+const btnGhost = "rounded-lg border border-[#4a1a1f]/25 bg-white px-4 py-2.5 text-sm font-bold text-[#4a1a1f] transition hover:bg-[#F7DDB8]/40 disabled:cursor-not-allowed disabled:opacity-60"
+const btnSolid = "rounded-lg bg-[#4a1a1f] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#3a1717] disabled:cursor-not-allowed disabled:opacity-60"
+const btnRed = "rounded-lg bg-[#E00000] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#b80000] disabled:cursor-not-allowed disabled:opacity-60"
+
+let modalLocks = 0
+
+function ModalShell({ title, subtitle, titleId, onClose, footer, small, bare, role = "dialog", z = "z-50", children }) {
+    const timer = useRef(null)
+
+    useEffect(() => {
+        modalLocks++
+        document.body.style.overflow = "hidden"
+        return () => {
+            clearTimeout(timer.current)
+            modalLocks--
+            if (modalLocks === 0) document.body.style.overflow = ""
+        }
+    }, [])
+
+    useEffect(() => {
+        const onKey = (e) => e.key === "Escape" && onClose()
+        window.addEventListener("keydown", onKey)
+        return () => window.removeEventListener("keydown", onKey)
+    }, [onClose])
+
+    const onScroll = (e) => {
+        const el = e.currentTarget
+        el.classList.add("is-scrolling")
+        clearTimeout(timer.current)
+        timer.current = setTimeout(() => el.classList.remove("is-scrolling"), 800)
+    }
+
+    return (
+        <div
+            className={`fixed inset-0 ${z} flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm`}
+            onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+        >
+            <style>{`@keyframes modal-pop{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}`}</style>
+            <div
+                role={role}
+                aria-modal="true"
+                aria-labelledby={titleId}
+                style={{ animation: "modal-pop .2s ease-out" }}
+                className={`relative flex max-h-[90vh] w-full flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ${small ? "max-w-sm" : "max-w-md"}`}
+            >
+                {bare ? (
+                    <h2 id={titleId} className="px-6 pt-6 text-xl font-bold text-[#2b0f12]">{title}</h2>
+                ) : (
+                    <>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            aria-label="Close"
+                            className="absolute right-4 top-4 z-10 rounded-full bg-black/5 p-2 text-gray-700 transition hover:bg-black/10"
+                        >
+                            <X size={18} />
+                        </button>
+                        <div className="shrink-0 border-b border-[#4a1a1f]/10 bg-[#F7DDB8]/40 px-6 py-5 pr-16">
+                            <h2 id={titleId} className="text-xl font-bold text-[#2b0f12]">{title}</h2>
+                            {subtitle && <p className="mt-1 text-xs text-[#4a1a1f]/70">{subtitle}</p>}
+                        </div>
+                    </>
+                )}
+                <div className="hover-scroll min-h-0 flex-1 overflow-y-auto" onScroll={onScroll}>
+                    {children}
+                </div>
+                {footer && (
+                    <div className={`shrink-0 bg-white px-6 py-4 ${bare ? "" : "border-t border-[#4a1a1f]/10"}`}>
+                        {footer}
+                    </div>
+                )}
+            </div>
+        </div>
+    )
+}
+
 function PasswordInput({ value, onChange, hasError }) {
     const [show, setShow] = useState(false)
     return (
@@ -101,7 +177,7 @@ function PasswordInput({ value, onChange, hasError }) {
                 type={show ? "text" : "password"}
                 value={value}
                 onChange={onChange}
-                className={`h-10 w-full rounded-sm border bg-white px-3 pr-10 text-sm font-semibold outline-none ${
+                className={`h-10 w-full rounded-lg border bg-white px-3 pr-10 text-sm font-semibold outline-none ${
                     hasError ? "border-red-700" : "border-[#4a1a1f]"
                 }`}
             />
@@ -166,40 +242,41 @@ function PasswordModal({ ask, onClose, onDone }) {
         ["conf", "Confirm new password"],
     ]
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-            <form
-                onSubmit={submit}
-                noValidate
-                role="dialog"
-                aria-modal="true"
-                className="w-full max-w-sm rounded-md bg-white p-6"
-            >
-                <h2 className="text-xl font-bold text-[#4a1a1f]">Change Password</h2>
-                <div className="mt-4 flex flex-col gap-3">
-                    {rows.map(([k, label]) => (
-                        <div key={k}>
-                            <label className="block text-sm font-bold text-[#4a1a1f]">{label}</label>
-                            <PasswordInput
-                                value={f[k]}
-                                onChange={(e) => setF({ ...f, [k]: e.target.value })}
-                                hasError={touched && !!errors[k]}
-                            />
-                            {touched && errors[k] && <p className="mt-1 text-xs text-red-700">{errors[k]}</p>}
-                        </div>
-                    ))}
-                </div>
-                {error && <p className="mt-3 text-xs font-bold text-red-700">{error}</p>}
-                <div className="mt-5 flex justify-end gap-3">
-                    <button type="button" onClick={onClose} className="rounded-sm px-4 py-2 text-sm font-bold text-[#4a1a1f]/70 hover:underline">
-                        Cancel
-                    </button>
-                    <button type="submit" disabled={saving} className="rounded-sm bg-[#4a1a1f] px-4 py-2 text-sm font-bold text-white hover:bg-[#3a1717] disabled:opacity-60">
+        return (
+        <ModalShell
+            title="Change Password"
+            subtitle="Use at least 8 characters with letters and numbers."
+            titleId="password-title"
+            onClose={onClose}
+            footer={
+                <div className="grid grid-cols-2 gap-4">
+                    <button type="button" onClick={onClose} className={btnGhost}>Cancel</button>
+                    <button
+                        type="submit"
+                        form="password-form"
+                        disabled={saving || !(f.cur || f.next || f.conf)}
+                        className={btnSolid}
+                    >
                         {saving ? "Updating..." : "Update"}
                     </button>
                 </div>
+            }
+        >
+            <form id="password-form" onSubmit={submit} noValidate className="flex flex-col gap-4 px-6 py-5">
+                {rows.map(([k, label]) => (
+                    <div key={k}>
+                        <label className="block text-sm font-bold text-[#4a1a1f]">{label}</label>
+                        <PasswordInput
+                            value={f[k]}
+                            onChange={(e) => setF({ ...f, [k]: e.target.value })}
+                            hasError={touched && !!errors[k]}
+                        />
+                        {touched && errors[k] && <p className="mt-1 text-xs text-red-700">{errors[k]}</p>}
+                    </div>
+                ))}
+                {error && <p className="rounded-lg bg-red-50 p-3 text-xs font-bold text-red-700" role="alert">{error}</p>}
             </form>
-        </div>
+        </ModalShell>
     )
 }
 
@@ -268,49 +345,47 @@ function AddLibrarianModal({ ask, onClose, onDone }) {
         ["password", "Temporary password", "password"],
     ]
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-            <form onSubmit={submit} noValidate role="dialog" aria-modal="true"
-                className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-md bg-white p-6">
-                <h2 className="text-xl font-bold text-[#4a1a1f]">Add Librarian</h2>
-                <p className="mt-1 text-xs text-[#4a1a1f]/70">
-                    They will be asked to change this temporary password on first login.
-                </p>
-                <div className="mt-4 flex flex-col gap-3">
-                    {rows.map(([k, label, type]) => (
-                        <div key={k}>
-                            <label className="block text-sm font-bold text-[#4a1a1f]">{label}</label>
-                            {type === "password" ? (
-                                <PasswordInput
-                                    value={f[k]}
-                                    onChange={(e) => setF({ ...f, [k]: e.target.value })}
-                                    hasError={touched && !!errors[k]}
-                                />
-                            ) : (
-                                <input
-                                    type={type}
-                                    value={f[k]}
-                                    onChange={(e) => setF({ ...f, [k]: e.target.value })}
-                                    className={`mt-1 h-10 w-full rounded-sm border bg-white px-3 text-sm font-semibold outline-none ${
-                                        touched && errors[k] ? "border-red-700" : "border-[#4a1a1f]"
-                                    }`}
-                                />
-                            )}
-                            {touched && errors[k] && <p className="mt-1 text-xs text-red-700">{errors[k]}</p>}
-                        </div>
-                    ))}
-                </div>
-                {error && <p className="mt-3 text-xs font-bold text-red-700">{error}</p>}
-                <div className="mt-5 flex justify-end gap-3">
-                    <button type="button" onClick={onClose} className="rounded-sm px-4 py-2 text-sm font-bold text-[#4a1a1f]/70 hover:underline">
-                        Cancel
-                    </button>
-                    <button type="submit" disabled={saving} className="rounded-sm bg-[#4a1a1f] px-4 py-2 text-sm font-bold text-white hover:bg-[#3a1717] disabled:opacity-60">
+        return (
+        <ModalShell
+            title="Add Librarian"
+            subtitle="They will be asked to change this temporary password on first login."
+            titleId="add-librarian-title"
+            onClose={onClose}
+            footer={
+                <div className="grid grid-cols-2 gap-4">
+                    <button type="button" onClick={onClose} className={btnGhost}>Cancel</button>
+                    <button type="submit" form="add-librarian-form" disabled={saving} className={btnSolid}>
                         {saving ? "Creating..." : "Create"}
                     </button>
                 </div>
+            }
+        >
+            <form id="add-librarian-form" onSubmit={submit} noValidate className="flex flex-col gap-4 px-6 py-5">
+                {rows.map(([k, label, type]) => (
+                    <div key={k}>
+                        <label className="block text-sm font-bold text-[#4a1a1f]">{label}</label>
+                        {type === "password" ? (
+                            <PasswordInput
+                                value={f[k]}
+                                onChange={(e) => setF({ ...f, [k]: e.target.value })}
+                                hasError={touched && !!errors[k]}
+                            />
+                        ) : (
+                            <input
+                                type={type}
+                                value={f[k]}
+                                onChange={(e) => setF({ ...f, [k]: e.target.value })}
+                                className={`mt-1 h-10 w-full rounded-lg border bg-white px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#4a1a1f]/30 ${
+                                    touched && errors[k] ? "border-red-700" : "border-[#4a1a1f]/40"
+                                }`}
+                            />
+                        )}
+                        {touched && errors[k] && <p className="mt-1 text-xs text-red-700">{errors[k]}</p>}
+                    </div>
+                ))}
+                {error && <p className="rounded-lg bg-red-50 p-3 text-xs font-bold text-red-700" role="alert">{error}</p>}
             </form>
-        </div>
+        </ModalShell>
     )
 }
 
@@ -557,18 +632,17 @@ function ConfirmModal({ title, message, confirmLabel = "Yes", run, onCancel }) {
         return () => window.removeEventListener("keydown", onKey, true)
     }, [onCancel, busy])
 
-    return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
-            <div role="alertdialog" aria-modal="true" className="w-full max-w-sm rounded-md bg-white p-6">
-                <h2 className="text-xl font-bold text-[#4a1a1f]">{title}</h2>
-                <p className="mt-2 text-sm text-[#4a1a1f]/80">{message}</p>
-                <div className="mt-5 flex justify-end gap-3">
-                    <button
-                        type="button"
-                        disabled={busy}
-                        onClick={onCancel}
-                        className="rounded-sm px-4 py-2 text-sm font-bold text-[#4a1a1f]/70 hover:underline disabled:opacity-60"
-                    >
+        return (
+        <ModalShell
+            title={title}
+            titleId="confirm-title"
+            role="alertdialog"
+            z="z-[60]"
+            small
+            onClose={() => !busy && onCancel()}
+            footer={
+                <div className="grid grid-cols-2 gap-4">
+                    <button type="button" disabled={busy} onClick={onCancel} className={btnGhost}>
                         Cancel
                     </button>
                     <button
@@ -578,13 +652,15 @@ function ConfirmModal({ title, message, confirmLabel = "Yes", run, onCancel }) {
                             setBusy(true)
                             try { await run() } finally { onCancel() }
                         }}
-                        className="rounded-sm bg-[#4a1a1f] px-4 py-2 text-sm font-bold text-white hover:bg-[#3a1717] disabled:opacity-60"
+                        className={btnSolid}
                     >
                         {busy ? "Working..." : confirmLabel}
                     </button>
                 </div>
-            </div>
-        </div>
+            }
+        >
+            <p className="px-6 py-5 text-sm leading-relaxed text-[#4a1a1f]/80">{message}</p>
+        </ModalShell>
     )
 }
 
@@ -665,6 +741,10 @@ export default function Profile() {
     }, [user])
 
     const values = editing ? draft : profile
+
+    const changed =
+        draftAvatar !== undefined ||
+        Object.keys(profile).some((k) => String(draft[k] ?? "").trim() !== String(profile[k] ?? "").trim())
 
     const startEdit = () => {
         setDraft(profile)
@@ -872,17 +952,19 @@ export default function Profile() {
                         {editing ? (
                             <div key="edit-actions" className="mt-6 grid grid-cols-2 gap-5">
                                 <button
-                                    type="submit"
-                                    className="rounded-sm bg-[#4a1a1f] py-2 text-sm font-bold text-white hover:bg-[#3a1717]"
-                                >
-                                    Save Changes
-                                </button>
-                                <button
                                     type="button"
                                     onClick={cancelEdit}
                                     className="rounded-sm border border-[#4a1a1f] bg-white py-2 text-sm font-bold text-[#4a1a1f] hover:bg-[#f3d9c0]"
                                 >
                                     Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={!changed}
+                                    title={!changed ? "No changes to save" : undefined}
+                                    className="rounded-sm bg-[#4a1a1f] py-2 text-sm font-bold text-white hover:bg-[#3a1717] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    Save Changes
                                 </button>
                             </div>
                         ) : (
@@ -927,29 +1009,29 @@ export default function Profile() {
                     />
                 )}
                 {confirm && <ConfirmModal {...confirm} onCancel={() => setConfirm(null)} />}
-                {showLogout && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-                        <div role="dialog" aria-modal="true" className="w-full max-w-sm rounded-md bg-white p-6">
-                            <h2 className="text-xl font-bold text-[#4a1a1f]">Log out?</h2>
-                            <p className="mt-2 text-sm text-[#4a1a1f]/80">Are you sure you want to log out?</p>
-                            <div className="mt-5 flex justify-end gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowLogout(false)}
-                                    className="rounded-sm px-4 py-2 text-sm font-bold text-[#4a1a1f]/70 hover:underline"
-                                >
+                                {showLogout && (
+                    <ModalShell
+                        title="Log out?"
+                        titleId="logout-title"
+                        role="alertdialog"
+                        small
+                        bare
+                        onClose={() => setShowLogout(false)}
+                        footer={
+                            <div className="grid grid-cols-2 gap-4">
+                                <button type="button" onClick={() => setShowLogout(false)} className={btnGhost}>
                                     Cancel
                                 </button>
-                                <button
-                                    type="button"
-                                    onClick={handleLogout}
-                                    className="rounded-sm bg-[#E00000] px-4 py-2 text-sm font-bold text-white"
-                                >
+                                <button type="button" onClick={handleLogout} className={btnRed}>
                                     Log out
                                 </button>
                             </div>
-                        </div>
-                    </div>
+                        }
+                    >
+                        <p className="px-6 pb-2 pt-2 text-sm leading-relaxed text-[#4a1a1f]/80">
+                            Are you sure you want to log out?
+                        </p>
+                    </ModalShell>
                 )}
             </main>
         </div>
