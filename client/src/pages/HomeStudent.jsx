@@ -1019,6 +1019,112 @@ function ConfirmModal({ title, message, confirmLabel = "Yes", run, onCancel }) {
   );
 }
 
+const NOTE_TONES = { red: "#c0121f", amber: "#eea51c", green: "#0a7a46" };
+
+const seenKey = () => {
+  try { return `seenNotes:${JSON.parse(localStorage.getItem("session"))?.id ?? "me"}`; }
+  catch { return "seenNotes:me"; }
+};
+const readSeenNotes = () => {
+  try { return new Set(JSON.parse(localStorage.getItem(seenKey()) || "[]")); }
+  catch { return new Set(); }
+};
+const saveSeenNotes = (set) => {
+  try { localStorage.setItem(seenKey(), JSON.stringify([...set])); } catch { /* storage unavailable */ }
+};
+
+const buildBorrowerNotes = (rows) => {
+  const out = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayDiff = (iso) => Math.round((new Date(String(iso).slice(0, 10) + "T00:00:00") - today) / 86400000);
+  const recent = (iso) => !!iso && dayDiff(iso) >= -7;
+  const days = (n) => `${n} ${n === 1 ? "day" : "days"}`;
+  const loans = rows.filter((r) => r.requestStatus === "approved");
+  const active = loans.filter((r) => !r.returned);
+
+  for (const t of active.filter((t) => t.overdue))
+    out.push({ key: `overdue|${t.id}`, tone: "red", title: `Overdue: ${t.title}`, sub: `${days(t.daysOverdue)} late · fine ₱${Number(t.fine).toFixed(2)}` });
+
+  for (const t of loans.filter((t) => t.returned && t.fine > 0 && !t.finePaid))
+    out.push({ key: `fine|${t.id}`, tone: "red", title: `Unpaid fine: ₱${Number(t.fine).toFixed(2)}`, sub: `${t.title} was returned late. Please settle it with the librarian.` });
+
+  for (const t of active.filter((t) => !t.overdue && t.due && dayDiff(t.due) <= 2)) {
+    const d = Math.max(0, dayDiff(t.due));
+    out.push({ key: `soon|${t.id}`, tone: "amber", title: `Due soon: ${t.title}`, sub: d === 0 ? "Due today." : `Due in ${days(d)} (${fmt(t.due)}).` });
+  }
+
+  for (const r of rows.filter((r) => r.requestStatus === "declined" && recent(r.decidedOn || r.requestedOn)))
+    out.push({ key: `declined|${r.id}`, tone: "red", title: `Request declined: ${r.title}`, sub: r.declineReason ? `Reason: ${r.declineReason}` : "No reason was given." });
+
+  for (const t of active.filter((t) => recent(t.borrowedOn)))
+    out.push({ key: `approved|${t.id}`, tone: "green", title: `Borrow approved: ${t.title}`, sub: `Due ${fmt(t.due)}.` });
+
+  for (const r of rows.filter((r) => r.requestStatus === "pending"))
+    out.push({ key: `pending|${r.id}`, tone: "amber", title: `Request sent: ${r.title}`, sub: "Waiting for librarian approval." });
+
+  for (const t of loans.filter((t) => t.returned && recent(t.returned)))
+    out.push({ key: `returned|${t.id}`, tone: "green", title: `Returned: ${t.title}`, sub: `Returned on ${fmt(t.returned)}.` });
+
+  return out;
+};
+
+function NotificationsModal({ notes, fresh, onClose }) {
+  const [page, setPage] = useState(1);
+  const size = 6;
+  const pages = Math.max(1, Math.ceil(notes.length / size));
+  const cur = Math.min(page, pages);
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div role="dialog" aria-modal="true" aria-labelledby="notes-title" className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between bg-[#4a1a1f] px-6 py-4 text-white">
+          <h2 id="notes-title" className="font-serif text-lg font-bold">Notifications</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-full p-1 text-white/80 hover:text-white">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <p className="mb-3 text-sm text-gray-500">
+            {notes.length === 0 ? "Nothing needs your attention." : `${notes.length} ${notes.length === 1 ? "notification" : "notifications"}`}
+          </p>
+          {notes.length === 0 && (
+            <p className="rounded-xl bg-[#fbf6ee] p-4 text-sm font-semibold text-[#0a7a46]">You're all caught up.</p>
+          )}
+          <ul className="flex flex-col gap-3">
+            {notes.slice((cur - 1) * size, cur * size).map((n) => (
+              <li key={n.key} className="flex items-start gap-3 rounded-xl border border-black/10 p-3 text-sm">
+                <span className="mt-1.5 h-3 w-3 shrink-0 rounded-full" style={{ background: NOTE_TONES[n.tone] }} />
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold">{n.title}</div>
+                  <div className="break-words text-gray-600">{n.sub}</div>
+                </div>
+                {fresh.has(n.key) && (
+                  <span className="shrink-0 rounded-full bg-[#4a1a1f] px-2 py-0.5 text-[10px] font-bold text-white">New</span>
+                )}
+              </li>
+            ))}
+          </ul>
+          <Pagination page={cur} totalPages={pages} onChange={setPage} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function HomeStudent() {
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1031,6 +1137,18 @@ export default function HomeStudent() {
   const [confirmAct, setConfirmAct] = useState(null);
   const ask = (title, message, confirmLabel, run) => setConfirmAct({ title, message, confirmLabel, run });
   const [toast, setToast] = useState("");
+  const [showNotes, setShowNotes] = useState(false);
+  const [freshNotes, setFreshNotes] = useState(() => new Set());
+  const [seenNotes, setSeenNotes] = useState(readSeenNotes);
+  const notes = buildBorrowerNotes(rows);
+  const unseen = notes.filter((n) => !seenNotes.has(n.key)).length;
+  const openNotes = () => {
+    setFreshNotes(new Set(notes.filter((n) => !seenNotes.has(n.key)).map((n) => n.key)));
+    const next = new Set(notes.map((n) => n.key));
+    saveSeenNotes(next);
+    setSeenNotes(next);
+    setShowNotes(true);
+  };
 
   // Toast once for each newly declined request
   const announceDeclined = (list) => {
@@ -1197,6 +1315,8 @@ export default function HomeStudent() {
       <Navbar
         active={view.page === "transactions" ? "transactions" : "home"}
         onNavigate={(page) => go(page)}
+        notificationCount={unseen}
+        onNotifications={openNotes}
       />
 
       {loadError && (
@@ -1276,6 +1396,8 @@ export default function HomeStudent() {
       )}
 
       {confirmAct && <ConfirmModal {...confirmAct} onCancel={() => setConfirmAct(null)} />}
+
+      {showNotes && <NotificationsModal notes={notes} fresh={freshNotes} onClose={() => setShowNotes(false)} />}
 
       {toast && (
         <div
