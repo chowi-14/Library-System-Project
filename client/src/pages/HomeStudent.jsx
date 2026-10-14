@@ -912,6 +912,113 @@ function CategoryView({ books, loading, slug, onBack, onView, onBorrow }) {
   );
 }
 
+function ReturnModal({ item, onCancel, onConfirm }) {
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && !busy && onCancel();
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [onCancel, busy]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      onMouseDown={(e) => e.target === e.currentTarget && !busy && onCancel()}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="return-title"
+        aria-describedby="return-desc"
+        className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl"
+      >
+        <div className="bg-[#4a1a1f] px-6 py-4 text-white">
+          <h2 id="return-title" className="font-serif text-lg font-bold">Return this book?</h2>
+        </div>
+        <div className="px-6 pb-6 pt-5">
+          <p id="return-desc" className="text-sm leading-relaxed text-gray-700">
+            Are you sure you want to return <strong>{item.title}</strong>?
+          </p>
+          {item.fine > 0 && (
+            <p className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] font-semibold text-red-700">
+              This book is {item.daysOverdue} {item.daysOverdue === 1 ? "day" : "days"} late. A fine of ₱{Number(item.fine).toFixed(2)} will be recorded.
+            </p>
+          )}
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={async () => { setBusy(true); await onConfirm(); }}
+              className="rounded-full bg-[#4a1a1f] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-125 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? "Returning..." : "Yes, return"}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onCancel}
+              className="rounded-full border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmModal({ title, message, confirmLabel = "Yes", run, onCancel }) {
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      if (!busy) onCancel();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onCancel, busy]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      onMouseDown={(e) => e.target === e.currentTarget && !busy && onCancel()}
+    >
+      <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-desc" className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="bg-[#4a1a1f] px-6 py-4 text-white">
+          <h2 id="confirm-title" className="font-serif text-lg font-bold">{title}</h2>
+        </div>
+        <div className="px-6 pb-6 pt-5">
+          <p id="confirm-desc" className="text-sm leading-relaxed text-gray-700">{message}</p>
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                try { await run(); } finally { onCancel(); }
+              }}
+              className="rounded-full bg-[#4a1a1f] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-125 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? "Working..." : confirmLabel}
+            </button>
+            <button type="button" disabled={busy} onClick={onCancel} className="rounded-full border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 disabled:opacity-60">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function HomeStudent() {
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -920,6 +1027,9 @@ export default function HomeStudent() {
   const [returningId, setReturningId] = useState(null);
   const [favorites, setFavorites] = useState([]);
   const [modal, setModal] = useState(null);
+  const [toReturn, setToReturn] = useState(null);
+  const [confirmAct, setConfirmAct] = useState(null);
+  const ask = (title, message, confirmLabel, run) => setConfirmAct({ title, message, confirmLabel, run });
   const [toast, setToast] = useState("");
 
   // Toast once for each newly declined request
@@ -1123,8 +1233,10 @@ export default function HomeStudent() {
           pending={pending}
           declined={declined}
           initialTab={location.state?.tab}
-          onReturn={handleReturn}
-          onCancelRequest={handleCancel}
+          onReturn={setToReturn}
+          onCancelRequest={(item) =>
+            ask("Cancel Request", `Cancel your request for "${item.title}"?`, "Yes, cancel request", () => handleCancel(item))
+          }
           onViewBook={(item) => {
             const b = books.find((x) => String(x.id) === String(item.bookId));
             if (b) openView(b);
@@ -1141,11 +1253,29 @@ export default function HomeStudent() {
           alreadyBorrowed={borrowed.some((b) => String(b.bookId) === String(modal.book.id))}
           alreadyRequested={pending.some((b) => String(b.bookId) === String(modal.book.id))}
           isFavorite={favorites.includes(String(modal.book.id))}
-          onToggleFavorite={toggleFavorite}
+          onToggleFavorite={(b) =>
+            favorites.includes(String(b.id))
+              ? ask("Remove Favorite", `Remove "${b.title}" from your favorites?`, "Yes, remove", () => toggleFavorite(b))
+              : toggleFavorite(b)
+          }
           onClose={closeModal}
-          onConfirm={confirmBorrow}
+          onConfirm={(b) =>
+            modal.mode === "borrow"
+              ? confirmBorrow(b)
+              : ask("Borrow This Book", `Send a borrow request for "${b.title}"?`, "Yes, send request", () => confirmBorrow(b))
+          }
         />
       )}
+
+      {toReturn && (
+        <ReturnModal
+          item={toReturn}
+          onCancel={() => setToReturn(null)}
+          onConfirm={async () => { await handleReturn(toReturn); setToReturn(null); }}
+        />
+      )}
+
+      {confirmAct && <ConfirmModal {...confirmAct} onCancel={() => setConfirmAct(null)} />}
 
       {toast && (
         <div

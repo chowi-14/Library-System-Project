@@ -12,7 +12,7 @@ const GREEN = "#0a7a46";
 const AMBER = "#c97a2b";
 const MUTED = "#6b7280";
 
-const LOAN_DAYS = 7;
+const LOAN_DAYS = 14;
 const FINE_PER_DAY = 5; // TODO: match the fine rule in your BorrowStore
 const MS_DAY = 86_400_000;
 
@@ -225,12 +225,7 @@ function LoanCard({ item, onReturn, onView }) {
 
   const progress = overdue ? 1 : Math.min(1, Math.max(0, (LOAN_DAYS - left) / LOAN_DAYS));
 
-  const handleReturn = () => {
-    const msg = overdue
-      ? `"${item.title}" is ${plural(-left, "day")} overdue. A fine of ₱${fine.toFixed(2)} applies.\n\nReturn it?`
-      : `Return "${item.title}" to the library?`;
-    if (window.confirm(msg)) onReturn(item);
-  };
+  const handleReturn = () => onReturn(item);
 
   return (
     <ExpandableCard

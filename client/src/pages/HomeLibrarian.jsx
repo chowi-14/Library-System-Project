@@ -303,11 +303,15 @@ const validate = (f) => {
   return e;
 };
 
+let modalLocks = 0;
 function Modal({ title, titleId, onClose, small, role = "dialog", describedBy, children }) {
   useEffect(() => {
-    const prev = document.body.style.overflow;
+    modalLocks++;
     document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
+    return () => {
+      modalLocks--;
+      if (modalLocks === 0) document.body.style.overflow = "";
+    };
   }, []);
   return (
     <div
@@ -355,7 +359,7 @@ function Field({ label, error, counter, children }) {
   );
 }
 
-function BookFormModal({ book, books = [], onClose, onSave }) {
+function BookFormModal({ book, books = [], ask, onClose, onSave }) {
   const editing = !!book;
   const isData = !!book?.image && book.image.startsWith("data:");
   const [form, setForm] = useState(() =>
@@ -421,7 +425,15 @@ function BookFormModal({ book, books = [], onClose, onSave }) {
       setSubmitError(`Fix these fields: ${Object.keys(errors).join(", ")}.`);
       return;
     }
+    ask(
+      editing ? "Save Changes" : "Add Book",
+      editing ? `Save changes to "${form.title.trim()}"?` : `Add "${form.title.trim()}" to the catalog?`,
+      editing ? "Yes, save" : "Yes, add",
+      save
+    );
+  };
 
+  const save = async () => {
     setSaving(true);
     setSubmitError("");
     try {
@@ -722,7 +734,7 @@ const readImport = (text, existing) => {
   return { rows, error: table.length - 1 > MAX_IMPORT_ROWS ? `Only the first ${MAX_IMPORT_ROWS} rows were read.` : "" };
 };
 
-function ImportModal({ books, onClose, onDone }) {
+function ImportModal({ books, ask, onClose, onDone }) {
   const [fileName, setFileName] = useState("");
   const [fileError, setFileError] = useState("");
   const [rows, setRows] = useState([]);
@@ -791,7 +803,14 @@ function ImportModal({ books, onClose, onDone }) {
                 {bad.length > 20 && <p className="text-xs text-gray-500">...and {bad.length - 20} more.</p>}
               </div>
             )}
-            <button type="button" className={btnPrimary} disabled={!good.length || busy} onClick={run}>
+            <button
+              type="button"
+              className={btnPrimary}
+              disabled={!good.length || busy}
+              onClick={() =>
+                ask("Import Books", `Import ${good.length} ${good.length === 1 ? "book" : "books"} into the catalog?`, "Yes, import", run)
+              }
+            >
               {busy ? "Importing..." : good.length ? `Import ${good.length} ${good.length === 1 ? "book" : "books"}` : "Nothing to import"}
             </button>
           </>
@@ -1388,6 +1407,78 @@ function Footer({ onNavigate }) {
   );
 }
 
+// ---------- Generic confirmation ----------
+function ConfirmModal({ title, message, confirmLabel = "Yes", danger, run, onCancel }) {
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation(); // don't also close the modal underneath
+      if (!busy) onCancel();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onCancel, busy]);
+
+  return (
+    <Modal title={title} titleId="confirm-title" describedBy="confirm-desc" role="alertdialog" small onClose={() => !busy && onCancel()}>
+      <div className="px-6 pt-[22px] pb-[26px]">
+        <p id="confirm-desc" className="mb-[18px] text-sm leading-normal">{message}</p>
+        <div className="grid grid-cols-2 gap-6">
+          <button
+            type="button"
+            className={danger ? btnDanger : btnPrimary}
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try { await run(); } finally { onCancel(); }
+            }}
+          >
+            {busy ? "Working..." : confirmLabel}
+          </button>
+          <button type="button" className={btnSecondary} onClick={onCancel} disabled={busy}>Cancel</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------- Return confirmation ----------
+function ReturnModal({ tx, onCancel, onConfirm }) {
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && !busy && onCancel();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel, busy]);
+
+  return (
+    <Modal title="Mark as Returned" titleId="return-title" describedBy="return-desc" role="alertdialog" small onClose={onCancel}>
+      <div className="px-6 pt-[22px] pb-[26px]">
+        <p id="return-desc" className="mb-3 text-sm leading-normal">
+          Mark <strong>{tx.title}</strong> as returned by <strong>{tx.borrower}</strong>?
+        </p>
+        {tx.overdue && (
+          <p className="mb-3 rounded-lg bg-[#c0121f]/10 p-3 text-[13px] font-semibold text-[#c0121f]">
+            This book is {tx.daysOverdue} {tx.daysOverdue === 1 ? "day" : "days"} late. A fine of {peso(tx.fine)} will be recorded.
+          </p>
+        )}
+        <div className="mt-[18px] grid grid-cols-2 gap-6">
+          <button
+            type="button"
+            className={btnPrimary}
+            disabled={busy}
+            onClick={async () => { setBusy(true); await onConfirm(); }}
+          >
+            {busy ? "Returning..." : "Yes, return"}
+          </button>
+          <button type="button" className={btnSecondary} onClick={onCancel} disabled={busy}>Cancel</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ---------- Approve / decline confirmation ----------
 function ApproveModal({ request, onCancel, onConfirm }) {
   const [busy, setBusy] = useState(false);
@@ -1601,6 +1692,10 @@ export default function HomeLibrarian() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [toDelete, setToDelete] = useState(null);
+  const [toReturn, setToReturn] = useState(null);
+  const [confirmAct, setConfirmAct] = useState(null);
+  const ask = (title, message, confirmLabel, run, danger = false) =>
+    setConfirmAct({ title, message, confirmLabel, run, danger });
   const [toEdit, setToEdit] = useState(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
@@ -1758,6 +1853,14 @@ export default function HomeLibrarian() {
     setToDelete(null);
   };
 
+  const askPay = (t) =>
+    ask(
+      "Mark Fine as Paid",
+      `Mark the fine of ${peso(t.fine)} for "${t.title}" (${t.borrower}) as paid?`,
+      "Yes, mark paid",
+      () => payFine(t)
+    );
+
   const filteredTx = transactions.filter(
     (t) => statusFilter === "All Statuses" || (statusFilter === "Overdue" ? t.overdue : t.status === statusFilter)
   );
@@ -1813,7 +1916,7 @@ export default function HomeLibrarian() {
       sortable: true,
       render: (r) => (r.fine > 0 ? `${peso(r.fine)} (${r.daysOverdue}d late)${r.finePaid ? " · PAID" : ""}` : "-"),
     },
-    { key: "actions", label: "Actions", render: (r) => <TxActions t={r} onReturn={returnTx} onPayFine={payFine} /> },
+    { key: "actions", label: "Actions", render: (r) => <TxActions t={r} onReturn={setToReturn} onPayFine={askPay} /> },
   ];
 
   const notes = buildNotifications(transactions, books, requests);
@@ -2042,8 +2145,8 @@ export default function HomeLibrarian() {
         </div>
       )}
 
-      {showModal && <BookFormModal books={books} onClose={() => setShowModal(false)} onSave={addBook} />}
-      {toEdit && <BookFormModal key={toEdit.id} book={toEdit} books={books} onClose={() => setToEdit(null)} onSave={saveEdit} />}
+      {showModal && <BookFormModal books={books} ask={ask} onClose={() => setShowModal(false)} onSave={addBook} />}
+      {toEdit && <BookFormModal key={toEdit.id} book={toEdit} books={books} ask={ask} onClose={() => setToEdit(null)} onSave={saveEdit} />}
       {toDelete && <ConfirmDeleteModal book={toDelete} onCancel={() => setToDelete(null)} onConfirm={deleteBook} />}
       {openStudent && (
         <StudentModal
@@ -2051,8 +2154,8 @@ export default function HomeLibrarian() {
           transactions={transactions}
           onClose={() => setStudentEmail(null)}
           onIssue={(s) => setIssueCtx({ student: s })}
-          onReturn={returnTx}
-          onPayFine={payFine}
+          onReturn={setToReturn}
+          onPayFine={askPay}
         />
       )}
       {issueCtx && (
@@ -2068,11 +2171,20 @@ export default function HomeLibrarian() {
       {showImport && (
         <ImportModal
           books={books}
+          ask={ask}
           onClose={() => setShowImport(false)}
           onDone={(msg) => { setShowImport(false); reload(); notify(msg); }}
         />
       )}
       {showNotes && <NotificationsModal notes={notes} onClose={() => setShowNotes(false)} />}
+      {toReturn && (
+        <ReturnModal
+          tx={toReturn}
+          onCancel={() => setToReturn(null)}
+          onConfirm={async () => { await returnTx(toReturn); setToReturn(null); }}
+        />
+      )}
+      {confirmAct && <ConfirmModal {...confirmAct} onCancel={() => setConfirmAct(null)} />}
     </div>
   );
 }

@@ -117,7 +117,7 @@ function PasswordInput({ value, onChange, hasError }) {
     )
 }
 
-function PasswordModal({ onClose, onDone }) {
+function PasswordModal({ ask, onClose, onDone }) {
     const [f, setF] = useState({ cur: "", next: "", conf: "" })
     const [touched, setTouched] = useState(false)
     const [error, setError] = useState("")
@@ -132,10 +132,14 @@ function PasswordModal({ onClose, onDone }) {
         conf: f.conf !== f.next && "Passwords don't match",
     }
 
-    const submit = async (e) => {
+    const submit = (e) => {
         e.preventDefault()
         setTouched(true)
         if (Object.values(errors).some(Boolean)) return
+        ask("Change Password", "Change your password?", "Yes, change", send)
+    }
+
+    const send = async () => {
         setSaving(true)
         setError("")
         try {
@@ -199,7 +203,7 @@ function PasswordModal({ onClose, onDone }) {
     )
 }
 
-function AddLibrarianModal({ onClose, onDone }) {
+function AddLibrarianModal({ ask, onClose, onDone }) {
     const [f, setF] = useState({
         firstName: "", lastName: "", email: "", idNumber: "",
         phone_number: "", password: "",
@@ -218,10 +222,19 @@ function AddLibrarianModal({ onClose, onDone }) {
             : !/[A-Za-z]/.test(f.password) || !/[0-9]/.test(f.password) ? "Use letters and numbers" : "",
     }
 
-    const submit = async (e) => {
+    const submit = (e) => {
         e.preventDefault()
         setTouched(true)
         if (Object.values(errors).some(Boolean)) return
+        ask(
+            "Add Librarian",
+            `Create a librarian account for ${f.firstName.trim()} ${f.lastName.trim()}?`,
+            "Yes, create",
+            send
+        )
+    }
+
+    const send = async () => {
         setSaving(true)
         setError("")
         try {
@@ -531,6 +544,50 @@ function FavoritesModal({ books, onClose, onSelect }) {
     )
 }
 
+function ConfirmModal({ title, message, confirmLabel = "Yes", run, onCancel }) {
+    const [busy, setBusy] = useState(false)
+
+    useEffect(() => {
+        const onKey = (e) => {
+            if (e.key !== "Escape") return
+            e.stopImmediatePropagation()
+            if (!busy) onCancel()
+        }
+        window.addEventListener("keydown", onKey, true)
+        return () => window.removeEventListener("keydown", onKey, true)
+    }, [onCancel, busy])
+
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
+            <div role="alertdialog" aria-modal="true" className="w-full max-w-sm rounded-md bg-white p-6">
+                <h2 className="text-xl font-bold text-[#4a1a1f]">{title}</h2>
+                <p className="mt-2 text-sm text-[#4a1a1f]/80">{message}</p>
+                <div className="mt-5 flex justify-end gap-3">
+                    <button
+                        type="button"
+                        disabled={busy}
+                        onClick={onCancel}
+                        className="rounded-sm px-4 py-2 text-sm font-bold text-[#4a1a1f]/70 hover:underline disabled:opacity-60"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        disabled={busy}
+                        onClick={async () => {
+                            setBusy(true)
+                            try { await run() } finally { onCancel() }
+                        }}
+                        className="rounded-sm bg-[#4a1a1f] px-4 py-2 text-sm font-bold text-white hover:bg-[#3a1717] disabled:opacity-60"
+                    >
+                        {busy ? "Working..." : confirmLabel}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
 export default function Profile() {
     const navigate = useNavigate()
     const { user, logout, updateProfile, updateAvatar } = useAuth()
@@ -541,6 +598,8 @@ export default function Profile() {
     const [showPassword, setShowPassword] = useState(!!user.mustChangePassword)
     const [showAddLibrarian, setShowAddLibrarian] = useState(false)
     const [showFavorites, setShowFavorites] = useState(false)
+    const [confirm, setConfirm] = useState(null)
+    const ask = (title, message, confirmLabel, run) => setConfirm({ title, message, confirmLabel, run })
     const [msg, setMsg] = useState("")
     const isLibrarian = user.role === "librarian"
     const roleLabel = isLibrarian
@@ -626,12 +685,15 @@ export default function Profile() {
         setErrors(validate(next, user.role))
     }
 
-    const save = async (e) => {
+    const save = (e) => {
         e.preventDefault()
         const found = validate(draft, user.role)
         setErrors(found)
         if (Object.keys(found).length > 0) return
+        ask("Save Changes", "Save changes to your profile?", "Yes, save", doSave)
+    }
 
+    const doSave = async () => {
         const clean = Object.fromEntries(
             Object.entries(draft).map(([k, v]) => [k, String(v ?? "").trim()])
         )
@@ -845,12 +907,14 @@ export default function Profile() {
                 </div>
                 {showPassword && (
                     <PasswordModal
+                        ask={ask}
                         onClose={() => setShowPassword(false)}
                         onDone={() => { setShowPassword(false); setMsg("Password changed.") }}
                     />
                 )}
                 {showAddLibrarian && (
                     <AddLibrarianModal
+                        ask={ask}
                         onClose={() => setShowAddLibrarian(false)}
                         onDone={() => { setShowAddLibrarian(false); setMsg("Librarian account created.") }}
                     />
@@ -862,6 +926,7 @@ export default function Profile() {
                         onSelect={(b) => navigate("/home", { state: { page: "home", bookId: b.id } })}
                     />
                 )}
+                {confirm && <ConfirmModal {...confirm} onCancel={() => setConfirm(null)} />}
                 {showLogout && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
                         <div role="dialog" aria-modal="true" className="w-full max-w-sm rounded-md bg-white p-6">
