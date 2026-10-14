@@ -8,9 +8,9 @@ import crest from "../assets/crest.webp";
 import bg from "../assets/bg.webp";
 import { useLocation, useNavigate } from "react-router-dom";
 
-const API = "http://localhost:5001/api/books";
+const API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/books`;
 
-const BORROW_API = "http://localhost:5001/api/borrowings";
+const BORROW_API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/borrowings`;
 
 const api = async (path = "", options = {}, base = API) => {
   const res = await fetch(`${base}${path}`, {
