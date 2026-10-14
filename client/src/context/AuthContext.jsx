@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AuthContext } from "./authContext1";
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:5001/api";
+console.log("API base:", API);
 
 const post = async (path, body) => {
     try {
