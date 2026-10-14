@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Navbar from "../components/Navbar";
 import Pagination from "../components/Pagination";
 import crest from "../assets/crest.webp";
+import { Html5Qrcode } from "html5-qrcode";
 
 const API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/books`;
 const BORROW_API = `${import.meta.env.VITE_API_URL ?? "http://localhost:5001/api"}/borrowings`;
@@ -214,6 +215,7 @@ const BADGE_COLORS = {
   returned: "bg-[#0c7a43]/10 text-[#0c7a43] ring-[#0c7a43]/30",
   "not-returned": "bg-[#eea51c]/15 text-[#8a5a00] ring-[#eea51c]/40",
   borrowed: "bg-[#eea51c]/15 text-[#8a5a00] ring-[#eea51c]/40",
+  "pending-return": "bg-[#eea51c]/15 text-[#8a5a00] ring-[#eea51c]/40",
 };
 
 const Badge = ({ status, overdue }) => {
@@ -660,6 +662,11 @@ const buildNotifications = (transactions, books, requests = []) => {
   for (const r of requests) {
     out.push({ tone: "amber", title: `Borrow request: ${r.title}`, sub: `${r.borrower} is waiting for approval.` });
   }
+  for (const t of transactions) {
+    if (t.pendingReturn) {
+      out.push({ tone: "amber", title: `Return request: ${t.title}`, sub: `${t.borrower} is waiting for return verification.` });
+    }
+  }
   for (const b of books) {
     if (copiesLeft(b) === 0) out.push({ tone: "maroon", title: `No copies left: ${b.title}`, sub: `All ${b.totalCopies ?? 1} copies are borrowed.` });
   }
@@ -1012,7 +1019,7 @@ function StudentModal({ student, transactions, onClose, onIssue, onReturn, onPay
 }
 
 // ---------- Notifications ----------
-function NotificationsModal({ notes, onClose }) {
+function NotificationsModal({ notes, onClear, onClose }) {
   const [page, setPage] = useState(1);
   const size = 6;
   const pages = Math.max(1, Math.ceil(notes.length / size));
@@ -1024,6 +1031,9 @@ function NotificationsModal({ notes, onClose }) {
           {notes.length === 0 ? "Nothing needs your attention." : `${notes.length} ${notes.length === 1 ? "notification" : "notifications"}`}
         </p>
         {notes.length === 0 && <p className="rounded-xl bg-[#faf6f0] p-4 font-semibold text-[#0c7a43]">You're all caught up.</p>}
+        {notes.length > 0 && (
+          <button type="button" className={`${btnSmall} self-end`} onClick={onClear}>Clear all</button>
+        )}
         {notes.slice((cur - 1) * size, cur * size).map((n, i) => (
           <div key={i} className="flex items-start gap-3 rounded-xl border border-[#2b2b2b]/20 p-3">
             <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ background: TONES[n.tone] }} />
@@ -1090,6 +1100,7 @@ function Overview({ books, transactions, requests, onAction, onStat }) {
   const active = transactions.filter((t) => !isReturned(t));
   const overdue = active.filter((t) => t.overdue).sort((a, b) => b.daysOverdue - a.daysOverdue);
   const dueToday = active.filter((t) => isToday(t.due)).length;
+  const pendingReturns = active.filter((t) => t.pendingReturn).length;
 
   const stats = [
     ["Total Book Copies", books.reduce((s, b) => s + (b.totalCopies ?? 1), 0), "bg-[#e4f1ee]"],
@@ -1117,10 +1128,15 @@ function Overview({ books, transactions, requests, onAction, onStat }) {
             onClick={() => onAction(k)}
             className="group flex cursor-pointer items-center gap-3 rounded-2xl border border-[#4a1f1f]/15 bg-[#faf6f0] p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#eea51c] hover:shadow-md"
           >
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#4a1f1f] text-[#eea51c] transition group-hover:bg-[#eea51c] group-hover:text-[#4a1f1f]">
+            <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#4a1f1f] text-[#eea51c] transition group-hover:bg-[#eea51c] group-hover:text-[#4a1f1f]">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d={icon} />
               </svg>
+              {k === "returns" && pendingReturns > 0 && (
+                <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#c0121f] px-1 text-[11px] font-bold text-white ring-2 ring-white">
+                  {pendingReturns}
+                </span>
+              )}
             </span>
             <span className="min-w-0 flex-1">
               <strong className="block text-sm text-[#4a1f1f]">{label}</strong>
@@ -1479,6 +1495,136 @@ function ReturnModal({ tx, onCancel, onConfirm }) {
   );
 }
 
+// ---------- Verify return (scan QR or type the number) ----------
+function VerifyReturnModal({ onClose, onDone }) {
+  const [mode, setMode] = useState("scan");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [camError, setCamError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const busyRef = useRef(false);
+  const lastScan = useRef({ text: "", at: 0 });
+
+  const verify = async (value) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const tx = await api("/verify-return", { method: "PUT", body: JSON.stringify({ code: value }) }, BORROW_API);
+      setResult(tx);
+      onDone(tx);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (mode !== "scan" || result) return;
+    let scanner = null;
+    let cancelled = false;
+    setCamError("");
+    const stop = (s) => s.stop().then(() => s.clear()).catch(() => {});
+    (async () => {
+      try {
+        const s = new Html5Qrcode("qr-reader");
+        await s.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 220, height: 220 } },
+          (text) => {
+            const now = Date.now();
+            if (text === lastScan.current.text && now - lastScan.current.at < 3000) return;
+            lastScan.current = { text, at: now };
+            verify(text);
+          },
+          () => {}
+        );
+        scanner = s;
+        if (cancelled) stop(s);
+      } catch {
+        if (!cancelled) setCamError("Couldn't open the camera. Allow camera access, or enter the number instead.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (scanner) stop(scanner);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, result]);
+
+  const submitManual = (e) => {
+    e.preventDefault();
+    const v = code.replace(/\s/g, "");
+    if (!/^\d{8}$/.test(v)) return setError("Enter the 8-digit verification number.");
+    verify(v);
+  };
+
+  const tab = (k, label) => (
+    <button
+      type="button"
+      onClick={() => { setMode(k); setError(""); }}
+      className={`flex-1 cursor-pointer rounded-md border-0 py-2 text-[13px] font-semibold ${mode === k ? "bg-[#4a1f1f] text-white" : "bg-[#faf6f0] text-[#4a1f1f]"}`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <Modal title="Verify Return" titleId="verify-return-title" onClose={onClose}>
+      <div className="flex flex-col gap-3.5 px-6 pt-[22px] pb-[26px] text-[13px]">
+        {result ? (
+          <>
+            <div className="rounded-xl bg-[#0c7a43]/10 p-4 text-[#0c7a43]">
+              <strong className="block text-base">Return confirmed</strong>
+              <span className="block">{result.title}</span>
+              <span className="block">Returned by {result.borrower}</span>
+              {result.fine > 0 && (
+                <span className="mt-1 block font-bold text-[#c0121f]">
+                  {result.daysOverdue} {result.daysOverdue === 1 ? "day" : "days"} late. Fine due: {peso(result.fine)}
+                </span>
+              )}
+            </div>
+            <button type="button" className={btnPrimary} onClick={() => { setResult(null); setCode(""); }}>Verify another</button>
+            <button type="button" className={btnSecondary} onClick={onClose}>Done</button>
+          </>
+        ) : (
+          <>
+            <div className="flex gap-2">{tab("scan", "Scan QR code")}{tab("manual", "Enter number")}</div>
+            {mode === "scan" ? (
+              <>
+                <div id="qr-reader" className="overflow-hidden rounded-xl bg-black/5" />
+                {camError && <p className="font-semibold text-[#c0121f]" role="alert">{camError}</p>}
+                <p className="text-gray-500">Point the camera at the borrower's QR code.</p>
+              </>
+            ) : (
+              <form onSubmit={submitManual} noValidate className="flex flex-col gap-3">
+                <Field label="Verification number">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoFocus
+                    maxLength={9}
+                    placeholder="e.g. 1234 5678"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    className={`${inputBase} border-[#2b2b2b] font-mono text-base tracking-widest`}
+                  />
+                </Field>
+                <button type="submit" className={btnPrimary} disabled={busy}>{busy ? "Verifying..." : "Verify"}</button>
+              </form>
+            )}
+            {error && <p className="font-semibold text-[#c0121f]" role="alert">{error}</p>}
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 // ---------- Approve / decline confirmation ----------
 function ApproveModal({ request, onCancel, onConfirm }) {
   const [busy, setBusy] = useState(false);
@@ -1512,16 +1658,32 @@ function ApproveModal({ request, onCancel, onConfirm }) {
 }
 
 const REASON_MAX = 300;
+const OTHER_REASON = "Other";
+const DECLINE_REASONS = [
+  "You have an overdue book.",
+  "You have an unpaid fine.",
+  "You've reached the borrowing limit.",
+  "This book is reserved for a class.",
+  "No copies are available right now.",
+  "This book is for restricted use only.",
+  OTHER_REASON,
+];
 
 function DeclineModal({ request, onCancel, onConfirm }) {
+  const [choice, setChoice] = useState("");
   const [reason, setReason] = useState("");
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const ref = useRef(null);
-  const trimmed = reason.trim();
-  const error = trimmed.length < 5 ? "Please enter a reason (at least 5 characters)." : "";
+  const isOther = choice === OTHER_REASON;
+  const trimmed = isOther ? reason.trim() : choice;
+  const error = !choice
+    ? "Choose a reason."
+    : isOther && trimmed.length < 5
+    ? "Please enter a reason (at least 5 characters)."
+    : "";
 
-  useEffect(() => { ref.current?.focus(); }, []);
+  useEffect(() => { if (isOther) ref.current?.focus(); }, [isOther]);
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onCancel();
     window.addEventListener("keydown", onKey);
@@ -1543,25 +1705,40 @@ function DeclineModal({ request, onCancel, onConfirm }) {
           Decline <strong>{request.title}</strong> requested by <strong>{request.borrower}</strong>?
           The reason will be shown to the borrower.
         </p>
-        <Field
-          label="Reason for declining"
-          error={touched && error}
-          counter={
-            <span className={`ml-auto whitespace-nowrap text-[11.5px] ${reason.length >= REASON_MAX ? "font-bold text-[#c0121f]" : "font-normal text-gray-500"}`}>
-              {reason.length}/{REASON_MAX}
-            </span>
-          }
-        >
-          <textarea
-            ref={ref}
-            value={reason}
-            maxLength={REASON_MAX}
-            onChange={(e) => setReason(e.target.value)}
+        <Field label="Reason for declining" error={touched && !choice && error}>
+          <select
+            value={choice}
+            onChange={(e) => setChoice(e.target.value)}
             onBlur={() => setTouched(true)}
-            placeholder="e.g. You have another book overdue, or this book is reserved for a class."
-            className={`${inputBase} min-h-[100px] resize-y ${touched && error ? "border-[#c0121f]" : "border-[#2b2b2b]"}`}
-          />
+            className={`${inputBase} ${touched && !choice ? "border-[#c0121f]" : "border-[#2b2b2b]"} ${choice ? "text-[#1b1b1b]" : "text-gray-400"}`}
+          >
+            <option value="" disabled>Choose a reason</option>
+            {DECLINE_REASONS.map((r) => (
+              <option key={r} value={r} className="text-[#1b1b1b]">{r}</option>
+            ))}
+          </select>
         </Field>
+        {isOther && (
+          <Field
+            label="Details"
+            error={touched && error}
+            counter={
+              <span className={`ml-auto whitespace-nowrap text-[11.5px] ${reason.length >= REASON_MAX ? "font-bold text-[#c0121f]" : "font-normal text-gray-500"}`}>
+                {reason.length}/{REASON_MAX}
+              </span>
+            }
+          >
+            <textarea
+              ref={ref}
+              value={reason}
+              maxLength={REASON_MAX}
+              onChange={(e) => setReason(e.target.value)}
+              onBlur={() => setTouched(true)}
+              placeholder="Write the reason for the borrower."
+              className={`${inputBase} min-h-[100px] resize-y ${touched && error ? "border-[#c0121f]" : "border-[#2b2b2b]"}`}
+            />
+          </Field>
+        )}
         <div className="grid grid-cols-2 gap-6">
           <button type="submit" className={btnDanger} disabled={busy}>{busy ? "Declining..." : "Decline"}</button>
           <button type="button" className={btnSecondary} onClick={onCancel} disabled={busy}>Cancel</button>
@@ -1702,6 +1879,10 @@ export default function HomeLibrarian() {
   const [transactions, setTransactions] = useState([]);
   const [requests, setRequests] = useState([]);
   const [seenNotes, setSeenNotes] = useState(() => new Set());
+  const [clearedNotes, setClearedNotes] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("clearedNotes:librarian") || "[]")); }
+    catch { return new Set(); }
+  });
   const returning = useRef(new Set());
   const [tab, setTab] = useState("overview");
   const [borrowerView, setBorrowerView] = useState("lookup");
@@ -1711,6 +1892,7 @@ export default function HomeLibrarian() {
   const [issueCtx, setIssueCtx] = useState(null);
   const [studentEmail, setStudentEmail] = useState(null);
   const [showImport, setShowImport] = useState(false);
+  const [showVerify, setShowVerify] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [profile, setProfile] = useState(null);
   const [toast, setToast] = useState("");
@@ -1761,7 +1943,11 @@ export default function HomeLibrarian() {
     reload();
     api("/me", {}, AUTH_API).then((d) => setProfile(normUser(d.user))).catch(() => {});
     window.addEventListener("focus", reload);
-    return () => window.removeEventListener("focus", reload);
+    const poll = setInterval(reload, 10000);
+    return () => {
+      window.removeEventListener("focus", reload);
+      clearInterval(poll);
+    };
   }, []);
 
   const q = query.trim().toLowerCase();
@@ -1861,13 +2047,14 @@ export default function HomeLibrarian() {
       () => payFine(t)
     );
 
-  const filteredTx = transactions.filter(
-    (t) => statusFilter === "All Statuses" || (statusFilter === "Overdue" ? t.overdue : t.status === statusFilter)
-  );
-  const txCount = (f) =>
-    f === "All Statuses" ? transactions.length
-    : f === "Overdue" ? transactions.filter((t) => t.overdue).length
-    : transactions.filter((t) => t.status === f).length;
+  const matchesStatus = (t, f) =>
+    f === "All Statuses" ? true
+    : f === "Overdue" ? t.overdue
+    : f === "Not Returned" ? !isReturned(t)
+    : f === "Pending Return" ? t.pendingReturn
+    : t.status === f;
+  const filteredTx = transactions.filter((t) => matchesStatus(t, statusFilter));
+  const txCount = (f) => transactions.filter((t) => matchesStatus(t, f)).length;
 
   const bookCols = [
     { key: "cover", label: "", render: (r) => <Cover colors={r.cover} image={r.image} /> },
@@ -1919,8 +2106,13 @@ export default function HomeLibrarian() {
     { key: "actions", label: "Actions", render: (r) => <TxActions t={r} onReturn={setToReturn} onPayFine={askPay} /> },
   ];
 
-  const notes = buildNotifications(transactions, books, requests);
   const noteKey = (n) => `${n.title}|${n.sub}`;
+  const notes = buildNotifications(transactions, books, requests).filter((n) => !clearedNotes.has(noteKey(n)));
+  const clearNotes = () => {
+    const next = new Set([...clearedNotes, ...notes.map(noteKey)]);
+    try { localStorage.setItem("clearedNotes:librarian", JSON.stringify([...next])); } catch { /* storage unavailable */ }
+    setClearedNotes(next);
+  };
   const unseen = notes.filter((n) => !seenNotes.has(noteKey(n))).length;
   const openNotes = () => {
     setSeenNotes((s) => new Set([...s, ...notes.map(noteKey)]));
@@ -1952,10 +2144,11 @@ export default function HomeLibrarian() {
     if (k === "issue") setIssueCtx({});
     else if (k === "requests") setTab("requests");
     else if (k === "catalog") { setBookSort({ key: "title", dir: "asc" }); setTab("books"); }
-    else if (k === "returns" || k === "history" || k === "overdue") {
+    else if (k === "returns") setShowVerify(true);
+    else if (k === "history" || k === "overdue") {
       setTab("borrowers");
       setBorrowerView("transactions");
-      setStatusFilter(k === "returns" ? "Not Returned" : k === "overdue" ? "Overdue" : "All Statuses");
+      setStatusFilter(k === "overdue" ? "Overdue" : "All Statuses");
     }
     else { setTab("borrowers"); setBorrowerView("lookup"); }
   };
@@ -2112,11 +2305,19 @@ export default function HomeLibrarian() {
             {borrowerView === "transactions" && (
               <>
                 <div className="mb-3 flex flex-wrap gap-2">
-                  {["All Statuses", "Not Returned", "Overdue", "Returned"].map((f) => (
+                  {["All Statuses", "Not Returned", "Pending Return", "Overdue", "Returned"].map((f) => (
                     <button key={f} className={chip(statusFilter === f, f === "Overdue")} onClick={() => setStatusFilter(f)}>
                       {f === "All Statuses" ? "All" : f} ({txCount(f)})
                     </button>
                   ))}
+                  <button className={`${btnPrimary} relative ml-auto py-1.5`} onClick={() => setShowVerify(true)}>
+                    Verify Return
+                    {txCount("Pending Return") > 0 && (
+                      <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#c0121f] px-1 text-[11px] font-bold text-white ring-2 ring-white">
+                        {txCount("Pending Return")}
+                      </span>
+                    )}
+                  </button>
                 </div>
                 <SortableTable
                   columns={txCols}
@@ -2176,7 +2377,16 @@ export default function HomeLibrarian() {
           onDone={(msg) => { setShowImport(false); reload(); notify(msg); }}
         />
       )}
-      {showNotes && <NotificationsModal notes={notes} onClose={() => setShowNotes(false)} />}
+      {showNotes && <NotificationsModal notes={notes} onClear={clearNotes} onClose={() => setShowNotes(false)} />}
+      {showVerify && (
+        <VerifyReturnModal
+          onClose={() => setShowVerify(false)}
+          onDone={(tx) => {
+            reload();
+            notify(`Return verified: "${tx.title}"${tx.fine > 0 ? `. Fine due: ${peso(tx.fine)}` : ""}.`);
+          }}
+        />
+      )}
       {toReturn && (
         <ReturnModal
           tx={toReturn}

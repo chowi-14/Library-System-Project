@@ -211,6 +211,8 @@ function LoanCard({ item, onReturn, onView }) {
 
   const [label, color] = returned
     ? ["RETURNED", MUTED]
+    : item.pendingReturn
+    ? ["PENDING RETURN", AMBER]
     : overdue
     ? ["OVERDUE", RED]
     : ["BORROWED", GREEN];
@@ -255,7 +257,7 @@ function LoanCard({ item, onReturn, onView }) {
               onClick={handleReturn}
               className="flex-1 rounded-xl bg-[#0a7a46] py-3 text-sm font-bold text-white transition hover:brightness-110"
             >
-              Return
+              {item.pendingReturn ? "Show Return QR" : "Return Book"}
             </button>
           )}
         </>

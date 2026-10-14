@@ -28,6 +28,13 @@ const requireLibrarian = (req, res, next) =>
 const checkId = (req, res, next) =>
     mongoose.isValidObjectId(req.params.id) ? next() : res.status(400).json({ error: 'Invalid id.' })
 
+const crypto = require('crypto')
+const RETURN_CODE_MINUTES = 15
+
+// A return code that has been generated, not used, and not expired
+const isReturnActive = (r) =>
+    !r.return_date && !!r.return_code && !!r.return_expires && new Date(r.return_expires) > new Date()
+
 const profiles = async (userIds) => {
     const [s, p] = await Promise.all([
         Student.find({ user_id: { $in: userIds } }),
@@ -48,8 +55,12 @@ const shapeAll = async (rows) => {
         const p = people.get(String(r.user_id))
         const u = um.get(String(r.user_id))
         const book = r.book_id
+        const pendingReturn = isReturnActive(r)
         return {
             id: r._id,
+            pendingReturn,
+            returnCode: pendingReturn ? r.return_code : null,
+            returnExpires: pendingReturn ? new Date(r.return_expires).toISOString() : null,
             bookId: book?._id,
             title: book?.title ?? '(deleted book)',
             cover: book?.cover ?? [],
@@ -63,7 +74,7 @@ const shapeAll = async (rows) => {
             status: pending ? 'Pending'
                 : r.status === 'declined' ? 'Declined'
                 : r.status === 'cancelled' ? 'Cancelled'
-                : returned ? 'Returned' : 'Not Returned',
+                : returned ? 'Returned' : pendingReturn ? 'Pending Return' : 'Not Returned',
             decidedOn: iso(r.decided_date),
             declineReason: r.decline_reason ?? '',
             overdue: !returned && late > 0,
@@ -147,7 +158,8 @@ router.get('/', auth, async (req, res) => {
     try {
         const filter = req.user.role === 'librarian' ? {} : { user_id: req.user.id }
         const rows = await Borrowing.find(filter).populate('book_id').sort({ borrow_date: -1, _id: -1 })
-        res.json(await shapeAll(rows))
+        const list = await shapeAll(rows)
+        res.json(req.user.role === 'librarian' ? list.map((t) => ({ ...t, returnCode: null })) : list)
     } catch (err) {
         serverError(res, err)
     }
@@ -272,7 +284,61 @@ router.put('/:id/cancel', auth, checkId, async (req, res) => {
     }
 })
 
-router.put('/:id/return', auth, checkId, async (req, res) => {
+// Borrower: start a return. Generates a code that expires in RETURN_CODE_MINUTES.
+router.put('/:id/return-request', auth, checkId, async (req, res) => {
+    try {
+        const b = await Borrowing.findById(req.params.id)
+        if (!b) return res.status(404).json({ error: 'Loan not found.' })
+        if (String(b.user_id) !== String(req.user.id)) return res.status(403).json({ error: 'Not your loan.' })
+        if (b.return_date) return res.status(400).json({ error: 'Already returned.' })
+        if (b.status && b.status !== 'approved') return res.status(400).json({ error: 'This was never an active loan.' })
+
+        let code
+        do {
+            code = String(crypto.randomInt(10000000, 100000000))
+        } while (await Borrowing.exists({ return_code: code, return_date: null, return_expires: { $gt: new Date() } }))
+
+        b.return_code = code
+        b.return_requested = new Date()
+        b.return_expires = new Date(Date.now() + RETURN_CODE_MINUTES * 60000)
+        await b.save()
+
+        const row = await Borrowing.findById(b._id).populate('book_id')
+        res.json((await shapeAll([row]))[0])
+    } catch (err) {
+        serverError(res, err)
+    }
+})
+
+// Librarian: confirm a return from the scanned QR or the typed number.
+router.put('/verify-return', auth, requireLibrarian, async (req, res) => {
+    try {
+        let code = String(req.body.code ?? '').trim()
+        if (code.toUpperCase().startsWith('HLRET:')) code = code.slice(6)
+        code = code.replace(/\s/g, '')
+        if (!/^\d{8}$/.test(code)) return res.status(400).json({ error: 'Invalid code.' })
+
+        const b = await Borrowing.findOne({ return_code: code, return_date: null })
+        if (!b) return res.status(404).json({ error: 'Invalid code. No active return matches it.' })
+        if (!b.return_expires || new Date(b.return_expires) <= new Date())
+            return res.status(400).json({ error: 'This code has expired. Ask the borrower to generate a new one.' })
+
+        const when = today()
+        b.return_date = when
+        b.fine_amount = daysLate(b.due_date, when) * FINE_PER_DAY
+        b.return_code = null
+        b.return_expires = null
+        await b.save()
+        await syncStatus(b.book_id)
+
+        const row = await Borrowing.findById(b._id).populate('book_id')
+        res.json((await shapeAll([row]))[0])
+    } catch (err) {
+        serverError(res, err)
+    }
+})
+
+router.put('/:id/return', auth, requireLibrarian, checkId, async (req, res) => {
     try {
         const b = await Borrowing.findById(req.params.id)
         if (!b) return res.status(404).json({ error: 'Transaction not found.' })
@@ -282,6 +348,8 @@ router.put('/:id/return', auth, checkId, async (req, res) => {
         if (b.status && b.status !== 'approved') return res.status(400).json({ error: 'This was never an active loan.' })
 
         b.return_date = today()
+        b.return_code = null
+        b.return_expires = null
         b.fine_amount = daysLate(b.due_date, b.return_date) * FINE_PER_DAY
         await b.save()
         await syncStatus(b.book_id)

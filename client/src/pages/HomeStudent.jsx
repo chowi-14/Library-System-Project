@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, BookOpen, BookMarked, ChevronRight, Scroll, GraduationCap, Skull, X, Search, CheckCircle2, Clock, ArrowUpDown, Heart } from "lucide-react";
 import Navbar from "../components/Navbar";
 import Cover from "../components/Cover";
+import { QRCodeSVG } from "qrcode.react";
 import BorrowerTransactions from "./BorrowerTransactions";
 import { fmt } from "../utils/dates";
 import crest from "../assets/crest.webp";
@@ -912,67 +913,6 @@ function CategoryView({ books, loading, slug, onBack, onView, onBorrow }) {
   );
 }
 
-function ReturnModal({ item, onCancel, onConfirm }) {
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && !busy && onCancel();
-    window.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
-    };
-  }, [onCancel, busy]);
-
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      onMouseDown={(e) => e.target === e.currentTarget && !busy && onCancel()}
-    >
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="return-title"
-        aria-describedby="return-desc"
-        className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl"
-      >
-        <div className="bg-[#4a1a1f] px-6 py-4 text-white">
-          <h2 id="return-title" className="font-serif text-lg font-bold">Return this book?</h2>
-        </div>
-        <div className="px-6 pb-6 pt-5">
-          <p id="return-desc" className="text-sm leading-relaxed text-gray-700">
-            Are you sure you want to return <strong>{item.title}</strong>?
-          </p>
-          {item.fine > 0 && (
-            <p className="mt-3 rounded-lg bg-red-50 p-3 text-[13px] font-semibold text-red-700">
-              This book is {item.daysOverdue} {item.daysOverdue === 1 ? "day" : "days"} late. A fine of ₱{Number(item.fine).toFixed(2)} will be recorded.
-            </p>
-          )}
-          <div className="mt-6 grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={async () => { setBusy(true); await onConfirm(); }}
-              className="rounded-full bg-[#4a1a1f] px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-125 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {busy ? "Returning..." : "Yes, return"}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={onCancel}
-              className="rounded-full border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 disabled:opacity-60"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ConfirmModal({ title, message, confirmLabel = "Yes", run, onCancel }) {
   const [busy, setBusy] = useState(false);
 
@@ -1033,6 +973,15 @@ const saveSeenNotes = (set) => {
   try { localStorage.setItem(seenKey(), JSON.stringify([...set])); } catch { /* storage unavailable */ }
 };
 
+const clearedKey = () => seenKey().replace("seenNotes", "clearedNotes");
+const readClearedNotes = () => {
+  try { return new Set(JSON.parse(localStorage.getItem(clearedKey()) || "[]")); }
+  catch { return new Set(); }
+};
+const saveClearedNotes = (set) => {
+  try { localStorage.setItem(clearedKey(), JSON.stringify([...set])); } catch { /* storage unavailable */ }
+};
+
 const buildBorrowerNotes = (rows) => {
   const out = [];
   const today = new Date();
@@ -1055,21 +1004,25 @@ const buildBorrowerNotes = (rows) => {
   }
 
   for (const r of rows.filter((r) => r.requestStatus === "declined" && recent(r.decidedOn || r.requestedOn)))
-    out.push({ key: `declined|${r.id}`, tone: "red", title: `Request declined: ${r.title}`, sub: r.declineReason ? `Reason: ${r.declineReason}` : "No reason was given." });
+    out.push({ key: `declined|${r.id}`, at: r.decidedOn || r.requestedOn, tone: "red", title: `Request declined: ${r.title}`, sub: r.declineReason ? `Reason: ${r.declineReason}` : "No reason was given." });
 
   for (const t of active.filter((t) => recent(t.borrowedOn)))
-    out.push({ key: `approved|${t.id}`, tone: "green", title: `Borrow approved: ${t.title}`, sub: `Due ${fmt(t.due)}.` });
+    out.push({ key: `approved|${t.id}`, at: t.borrowedOn, tone: "green", title: `Borrow approved: ${t.title}`, sub: `Due ${fmt(t.due)}.` });
 
   for (const r of rows.filter((r) => r.requestStatus === "pending"))
-    out.push({ key: `pending|${r.id}`, tone: "amber", title: `Request sent: ${r.title}`, sub: "Waiting for librarian approval." });
+    out.push({ key: `pending|${r.id}`, at: r.requestedOn, tone: "amber", title: `Request sent: ${r.title}`, sub: "Waiting for librarian approval." });
 
   for (const t of loans.filter((t) => t.returned && recent(t.returned)))
-    out.push({ key: `returned|${t.id}`, tone: "green", title: `Returned: ${t.title}`, sub: `Returned on ${fmt(t.returned)}.` });
+    out.push({ key: `returned|${t.id}`, at: t.returned, tone: "green", title: `Returned: ${t.title}`, sub: `Returned on ${fmt(t.returned)}.` });
 
-  return out;
+  const alerts = out.filter((n) => !n.at);
+  const events = out
+    .filter((n) => n.at)
+    .sort((a, b) => String(b.at).slice(0, 10).localeCompare(String(a.at).slice(0, 10)));
+  return [...alerts, ...events];
 };
 
-function NotificationsModal({ notes, fresh, onClose }) {
+function NotificationsModal({ notes, fresh, onClear, onClose }) {
   const [page, setPage] = useState(1);
   const size = 6;
   const pages = Math.max(1, Math.ceil(notes.length / size));
@@ -1104,6 +1057,17 @@ function NotificationsModal({ notes, fresh, onClose }) {
           {notes.length === 0 && (
             <p className="rounded-xl bg-[#fbf6ee] p-4 text-sm font-semibold text-[#0a7a46]">You're all caught up.</p>
           )}
+          {notes.length > 0 && (
+            <div className="mb-3 text-right">
+              <button
+                type="button"
+                onClick={onClear}
+                className="cursor-pointer rounded-full border border-[#4a1a1f]/30 bg-white px-3.5 py-1 text-xs font-semibold text-[#4a1a1f] transition hover:bg-[#4a1a1f]/5"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
           <ul className="flex flex-col gap-3">
             {notes.slice((cur - 1) * size, cur * size).map((n) => (
               <li key={n.key} className="flex items-start gap-3 rounded-xl border border-black/10 p-3 text-sm">
@@ -1125,6 +1089,111 @@ function NotificationsModal({ notes, fresh, onClose }) {
   );
 }
 
+const mmss = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+function ReturnQrModal({ item, returned, onClose, onGenerated }) {
+  const valid = item.returnCode && item.returnExpires && new Date(item.returnExpires) > new Date();
+  const [info, setInfo] = useState(valid ? { code: item.returnCode, expires: item.returnExpires } : null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  const started = useRef(false);
+
+  const generate = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const tx = await api(`/${item.id}/return-request`, { method: "PUT" }, BORROW_API);
+      setInfo({ code: tx.returnCode, expires: tx.returnExpires });
+      onGenerated?.();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    if (!info && !returned) generate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
+  const left = info ? Math.max(0, Math.floor((new Date(info.expires) - now) / 1000)) : 0;
+  const expired = !!info && left === 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div role="dialog" aria-modal="true" aria-labelledby="return-title" className="max-h-[92vh] w-full max-w-sm overflow-y-auto rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between bg-[#4a1a1f] px-6 py-4 text-white">
+          <h2 id="return-title" className="font-serif text-lg font-bold">{returned ? "Return confirmed" : "Return Book"}</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-full p-1 text-white/80 hover:text-white"><X size={20} /></button>
+        </div>
+
+        <div className="px-6 pb-6 pt-5 text-center">
+          <p className="text-sm font-bold">{item.title}</p>
+
+          {returned ? (
+            <>
+              <CheckCircle2 size={64} className="mx-auto mt-6 text-[#0a7a46]" />
+              <p className="mt-3 text-sm text-gray-700">The librarian verified your return. Thank you!</p>
+              <button type="button" onClick={onClose} className="mt-6 w-full rounded-full bg-[#4a1a1f] py-2.5 text-sm font-semibold text-white">Done</button>
+            </>
+          ) : !info ? (
+            <>
+              <p className="mt-8 text-sm text-gray-500">{error || (busy ? "Generating your code..." : "")}</p>
+              {error && (
+                <button type="button" onClick={generate} className="mt-4 rounded-full bg-[#4a1a1f] px-6 py-2.5 text-sm font-semibold text-white">Try again</button>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="mt-1 text-xs font-semibold text-amber-700">Status: Pending Return</p>
+              <div className={`mx-auto mt-4 w-fit rounded-2xl border border-black/10 bg-white p-3 ${expired ? "opacity-25" : ""}`}>
+                <QRCodeSVG value={`HLRET:${info.code}`} size={200} level="M" />
+              </div>
+              <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Verification number</p>
+              <p className="font-mono text-3xl font-bold tracking-widest text-[#2b0f12]">{info.code.slice(0, 4)} {info.code.slice(4)}</p>
+              <p className={`mt-2 text-sm font-semibold ${expired ? "text-red-700" : "text-gray-600"}`}>
+                {expired ? "This code has expired." : `Expires in ${mmss(left)}`}
+              </p>
+              {expired ? (
+                <button type="button" disabled={busy} onClick={generate} className="mt-4 w-full rounded-full bg-[#4a1a1f] py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+                  {busy ? "Generating..." : "Generate a new code"}
+                </button>
+              ) : (
+                <p className="mt-3 text-xs text-gray-500">Show this to the librarian. The book stays Pending Return until they verify it.</p>
+              )}
+              {item.fine > 0 && (
+                <p className="mt-3 rounded-lg bg-red-50 p-2 text-xs font-semibold text-red-700">
+                  Overdue by {item.daysOverdue} {item.daysOverdue === 1 ? "day" : "days"}. A fine of ₱{Number(item.fine).toFixed(2)} will be recorded.
+                </p>
+              )}
+              {error && <p className="mt-3 text-xs font-semibold text-red-700">{error}</p>}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function HomeStudent() {
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1140,7 +1209,13 @@ export default function HomeStudent() {
   const [showNotes, setShowNotes] = useState(false);
   const [freshNotes, setFreshNotes] = useState(() => new Set());
   const [seenNotes, setSeenNotes] = useState(readSeenNotes);
-  const notes = buildBorrowerNotes(rows);
+  const [clearedNotes, setClearedNotes] = useState(readClearedNotes);
+  const notes = buildBorrowerNotes(rows).filter((n) => !clearedNotes.has(n.key));
+  const clearNotes = () => {
+    const next = new Set([...clearedNotes, ...notes.map((n) => n.key)]);
+    saveClearedNotes(next);
+    setClearedNotes(next);
+  };
   const unseen = notes.filter((n) => !seenNotes.has(n.key)).length;
   const openNotes = () => {
     setFreshNotes(new Set(notes.filter((n) => !seenNotes.has(n.key)).map((n) => n.key)));
@@ -1191,6 +1266,9 @@ export default function HomeStudent() {
       requested: r.requestedOn,
       decided: r.decidedOn,
       declineReason: r.declineReason,
+      pendingReturn: r.pendingReturn,
+      returnCode: r.returnCode,
+      returnExpires: r.returnExpires,
       fine: r.fine,
       daysOverdue: r.daysOverdue,
     };
@@ -1247,6 +1325,14 @@ export default function HomeStudent() {
     const t = setTimeout(() => setToast(""), 3500);
     return () => clearTimeout(t);
   }, [toast]);
+
+  const returnRow = toReturn ? rows.find((r) => r.id === toReturn.id) : null;
+  useEffect(() => {
+    if (!toReturn) return;
+    const t = setInterval(loadLoans, 4000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toReturn]);
 
   const go = (page, slug = null) => {
     if (page === "transactions") loadLoans();
@@ -1388,16 +1474,17 @@ export default function HomeStudent() {
       )}
 
       {toReturn && (
-        <ReturnModal
+        <ReturnQrModal
           item={toReturn}
-          onCancel={() => setToReturn(null)}
-          onConfirm={async () => { await handleReturn(toReturn); setToReturn(null); }}
+          returned={!!returnRow?.returned}
+          onClose={() => setToReturn(null)}
+          onGenerated={loadLoans}
         />
       )}
 
       {confirmAct && <ConfirmModal {...confirmAct} onCancel={() => setConfirmAct(null)} />}
 
-      {showNotes && <NotificationsModal notes={notes} fresh={freshNotes} onClose={() => setShowNotes(false)} />}
+      {showNotes && <NotificationsModal notes={notes} fresh={freshNotes} onClear={clearNotes} onClose={() => setShowNotes(false)} />}
 
       {toast && (
         <div
