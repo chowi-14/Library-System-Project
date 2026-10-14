@@ -907,8 +907,8 @@ const buildNotifications = (transactions, books, requests = []) => {
 
 // ---------- CSV import ----------
 const CSV_TEMPLATE = `title,author,isbn,publisher,category,published,copies,pages,description,image,subcategory,shelf
-The Hobbit,J.R.R. Tolkien,9780547928227,Allen & Unwin,Fiction,1937-09-21,3,310,A hobbit goes on an unexpected adventure.,,Fantasy,Aisle 1
-A Brief History of Time,Stephen Hawking,9780553380163,Bantam Books,Non-Fiction,1988-04-01,2,212,An introduction to cosmology for general readers.,https://example.com/cover.jpg,Cosmology,Aisle 4
+The Hobbit,J.R.R. Tolkien,9780547928227,Allen & Unwin,Fiction,09/21/1937,3,310,A hobbit goes on an unexpected adventure.,,Fantasy,Aisle 1
+A Brief History of Time,Stephen Hawking,9780553380163,Bantam Books,Non-Fiction,04/01/1988,2,212,An introduction to cosmology for general readers.,https://example.com/cover.jpg,Cosmology,Aisle 4
 `;
 const REQUIRED_COLS = ["title", "author", "isbn", "publisher", "category", "published", "pages"];
 const MAX_IMPORT_ROWS = 500;
@@ -932,6 +932,16 @@ const parseCsv = (input) => {
 };
 
 const cleanIsbn = (s) => String(s ?? "").replace(/[\s-]/g, "").toUpperCase();
+
+// MM/DD/YYYY (or M/D/YYYY, also with dashes) -> YYYY-MM-DD, or "" if invalid
+const toIsoDate = (s) => {
+  const m = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.exec(String(s ?? "").trim());
+  if (!m) return "";
+  const [, mo, d, y] = m;
+  const iso = `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  const dt = new Date(iso + "T00:00:00Z");
+  return dt.getUTCFullYear() === +y && dt.getUTCMonth() + 1 === +mo && dt.getUTCDate() === +d ? iso : "";
+};
 const keyOf = (t, a) => `${t.toLowerCase()}|${a.toLowerCase()}`;
 
 const readImport = (text, existing, activeFor = () => 0) => {
@@ -972,13 +982,13 @@ const readImport = (text, existing, activeFor = () => 0) => {
     const cat = CATEGORIES.find((c) => c.toLowerCase() === cell(r, "category").toLowerCase());
     const form = {
       title: cell(r, "title"), author: cell(r, "author"), publisher: cell(r, "publisher"),
-      category: cat || "", subcategory: cell(r, "subcategory"), published: cell(r, "published"),
+      category: cat || "", subcategory: cell(r, "subcategory"), published: toIsoDate(cell(r, "published")), 
       description: cell(r, "description"), image: cell(r, "image"), copies: cell(r, "copies") || "1",
       isbn: cell(r, "isbn"), pages: cell(r, "pages"), shelf: cell(r, "shelf"),
     };
     const e = validate(form);
     if (!cat) e.category = `Category must be one of: ${CATEGORIES.join(", ")}.`;
-    if (form.published && !/^\d{4}-\d{2}-\d{2}$/.test(form.published)) e.published = "Use the date format YYYY-MM-DD.";
+    if (!form.published) e.published = "Use the date format MM/DD/YYYY (e.g. 09/21/1937).";
     const errors = Object.values(e);
     const row = { line: i + 2, label: form.title || "(no title)", form, errors, status: "invalid", match: null, changes: [], note: "" };
     if (errors.length) return row;
@@ -1106,7 +1116,7 @@ function ImportModal({ books, activeFor, ask, onClose, onDone }) {
         <p><strong>1.</strong> Download the template (.csv) and open it in Excel or Google Sheets.</p>
         <button type="button" className={btnSecondary} onClick={template}>Download template (.csv)</button>
         <p>
-          <strong>2.</strong> One book per row. Keep the header row. Categories: {CATEGORIES.join(", ")}. Date format: YYYY-MM-DD.
+          <strong>2.</strong> One book per row. Keep the header row. Categories: {CATEGORIES.join(", ")}. Date format: MM/DD/YYYY.
           Max {MAX_IMPORT_ROWS} rows. A row that matches a catalog book by ISBN (or title + author) <strong>updates</strong> it;
           blank optional cells keep the current value. Identical rows are skipped as duplicates.
         </p>
