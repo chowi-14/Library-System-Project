@@ -13,7 +13,8 @@ const borrowingSchema = new mongoose.Schema({
     status:         { type: String, enum: ['pending', 'approved', 'declined', 'cancelled'], default: 'approved' },
     requested_date: { type: Date, default: null },
     decided_by:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-    decided_date:   { type: Date, default: null }
+    decided_date:   { type: Date, default: null },
+    decline_reason: { type: String, trim: true, maxlength: 300, default: '' }
 })
 
 module.exports = mongoose.model('Borrowing', borrowingSchema)

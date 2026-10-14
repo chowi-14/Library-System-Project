@@ -65,6 +65,7 @@ const shapeAll = async (rows) => {
                 : r.status === 'cancelled' ? 'Cancelled'
                 : returned ? 'Returned' : 'Not Returned',
             decidedOn: iso(r.decided_date),
+            declineReason: r.decline_reason ?? '',
             overdue: !returned && late > 0,
             daysOverdue: late,
             fine: returned ? r.fine_amount : late * FINE_PER_DAY,
@@ -237,7 +238,12 @@ router.put('/:id/decline', auth, requireLibrarian, checkId, async (req, res) => 
         if (!b) return res.status(404).json({ error: 'Request not found.' })
         if (b.status !== 'pending') return res.status(400).json({ error: 'This request was already handled.' })
 
+        const reason = String(req.body?.reason ?? '').trim()
+        if (reason.length < 5) return res.status(400).json({ error: 'Please enter a reason (at least 5 characters).' })
+        if (reason.length > 300) return res.status(400).json({ error: 'Reason must be 300 characters or fewer.' })
+
         b.status = 'declined'
+        b.decline_reason = reason
         b.decided_by = req.user.id
         b.decided_date = new Date()
         await b.save()

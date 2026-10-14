@@ -1168,8 +1168,101 @@ function Footer({ onNavigate }) {
   );
 }
 
+// ---------- Approve / decline confirmation ----------
+function ApproveModal({ request, onCancel, onConfirm }) {
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onCancel();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <Modal title="Approve Request" titleId="approve-title" describedBy="approve-desc" role="alertdialog" small onClose={onCancel}>
+      <div className="px-6 pt-[22px] pb-[26px]">
+        <p id="approve-desc" className="mb-[18px] text-sm leading-normal">
+          Are you sure you want to approve <strong>{request.title}</strong> for <strong>{request.borrower}</strong>?
+          The loan starts today and is due in {LOAN_DAYS} days.
+        </p>
+        <div className="grid grid-cols-2 gap-6">
+          <button
+            type="button"
+            className={btnPrimary}
+            disabled={busy}
+            onClick={async () => { setBusy(true); await onConfirm(); }}
+          >
+            {busy ? "Approving..." : "Yes, approve"}
+          </button>
+          <button type="button" className={btnSecondary} onClick={onCancel} disabled={busy}>Cancel</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+const REASON_MAX = 300;
+
+function DeclineModal({ request, onCancel, onConfirm }) {
+  const [reason, setReason] = useState("");
+  const [touched, setTouched] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef(null);
+  const trimmed = reason.trim();
+  const error = trimmed.length < 5 ? "Please enter a reason (at least 5 characters)." : "";
+
+  useEffect(() => { ref.current?.focus(); }, []);
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onCancel();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setTouched(true);
+    if (error) return;
+    setBusy(true);
+    await onConfirm(trimmed);
+  };
+
+  return (
+    <Modal title="Decline Request" titleId="decline-title" onClose={onCancel}>
+      <form onSubmit={submit} noValidate className="flex flex-col gap-3.5 px-6 pt-[22px] pb-[26px]">
+        <p className="text-sm leading-normal">
+          Decline <strong>{request.title}</strong> requested by <strong>{request.borrower}</strong>?
+          The reason will be shown to the borrower.
+        </p>
+        <Field
+          label="Reason for declining"
+          error={touched && error}
+          counter={
+            <span className={`ml-auto whitespace-nowrap text-[11.5px] ${reason.length >= REASON_MAX ? "font-bold text-[#c0121f]" : "font-normal text-gray-500"}`}>
+              {reason.length}/{REASON_MAX}
+            </span>
+          }
+        >
+          <textarea
+            ref={ref}
+            value={reason}
+            maxLength={REASON_MAX}
+            onChange={(e) => setReason(e.target.value)}
+            onBlur={() => setTouched(true)}
+            placeholder="e.g. You have another book overdue, or this book is reserved for a class."
+            className={`${inputBase} min-h-[100px] resize-y ${touched && error ? "border-[#c0121f]" : "border-[#2b2b2b]"}`}
+          />
+        </Field>
+        <div className="grid grid-cols-2 gap-6">
+          <button type="submit" className={btnDanger} disabled={busy}>{busy ? "Declining..." : "Decline"}</button>
+          <button type="button" className={btnSecondary} onClick={onCancel} disabled={busy}>Cancel</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 // ---------- Borrow requests page ----------
 function RequestsTab({ requests, books, onDecide }) {
+  const [confirm, setConfirm] = useState(null); // { request, approve }
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(() => new Set());
   const [query, setQuery] = useState("");
@@ -1186,11 +1279,12 @@ function RequestsTab({ requests, books, onDecide }) {
   const cur = Math.min(page, pages);
   const shown = filtered.slice((cur - 1) * ROWS_PER_PAGE, cur * ROWS_PER_PAGE);
 
-  const decide = async (r, approve) => {
+  const decide = async (r, approve, reason) => {
     if (busy.has(r.id)) return;
     setBusy((s) => new Set(s).add(r.id));
-    await onDecide(r, approve);
+    await onDecide(r, approve, reason);
     setBusy((s) => { const n = new Set(s); n.delete(r.id); return n; });
+    setConfirm(null);
   };
 
   return (
@@ -1233,12 +1327,12 @@ function RequestsTab({ requests, books, onDecide }) {
                 <div className="flex gap-2">
                   <button
                     disabled={isBusy}
-                    onClick={() => decide(r, false)}
+                    onClick={() => setConfirm({ request: r, approve: false })}
                     className={`${btnBase} border border-[#c0121f] bg-white text-[#c0121f] hover:bg-red-50`}
                   >
                     Decline
                   </button>
-                  <button disabled={isBusy} onClick={() => decide(r, true)} className={btnPrimary}>
+                  <button disabled={isBusy} onClick={() => setConfirm({ request: r, approve: true })} className={btnPrimary}>
                     {isBusy ? "Working..." : "Approve"}
                   </button>
                 </div>
@@ -1250,6 +1344,21 @@ function RequestsTab({ requests, books, onDecide }) {
           </p>
           <Pagination page={cur} totalPages={pages} onChange={setPage} />
         </div>
+      )}
+
+      {confirm?.approve && (
+        <ApproveModal
+          request={confirm.request}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => decide(confirm.request, true)}
+        />
+      )}
+      {confirm && !confirm.approve && (
+        <DeclineModal
+          request={confirm.request}
+          onCancel={() => setConfirm(null)}
+          onConfirm={(reason) => decide(confirm.request, false, reason)}
+        />
       )}
     </section>
   );
@@ -1382,9 +1491,13 @@ export default function HomeLibrarian() {
     reload();
   };
 
-  const decide = async (r, approve) => {
+  const decide = async (r, approve, reason) => {
     try {
-      await api(`/${r.id}/${approve ? "approve" : "decline"}`, { method: "PUT" }, BORROW_API);
+      await api(
+        `/${r.id}/${approve ? "approve" : "decline"}`,
+        { method: "PUT", ...(approve ? {} : { body: JSON.stringify({ reason }) }) },
+        BORROW_API
+      );
       notify(approve ? `Approved "${r.title}" for ${r.borrower}.` : `Declined the request for "${r.title}".`);
     } catch (e) { notify(e.message); }
     reload();

@@ -310,6 +310,12 @@ function DeclinedCard({ item, onView }) {
         <>
           <InfoRow icon={Calendar} label="Requested" value={fmtShort(item.requested)} />
           <InfoRow icon={Ban} label="Declined" value={fmtShort(declinedOn)} color={RED} />
+          <div className="mt-2 rounded-lg border border-red-700/30 bg-white p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-red-700">Reason</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-[#2b0f12]">
+              {item.declineReason || "No reason was given."}
+            </p>
+          </div>
         </>
       }
       actions={<button type="button" onClick={() => onView?.(item)} className={primaryBtn}>View Details</button>}

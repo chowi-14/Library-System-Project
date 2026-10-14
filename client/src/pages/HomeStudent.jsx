@@ -919,7 +919,7 @@ export default function HomeStudent() {
       localStorage.setItem("seenDeclined", JSON.stringify([...seen, ...fresh.map((r) => r.id)]));
       setToast(
         fresh.length === 1
-          ? `Your request for "${fresh[0].title}" was declined.`
+          ? `Your request for "${fresh[0].title}" was declined.${fresh[0].declineReason ? ` Reason: ${fresh[0].declineReason}` : ""}`
           : `${fresh.length} of your borrow requests were declined.`
       );
     } catch { /* storage unavailable */ }
@@ -949,6 +949,7 @@ export default function HomeStudent() {
       returned: r.returned,
       requested: r.requestedOn,
       decided: r.decidedOn,
+      declineReason: r.declineReason,
       fine: r.fine,
       daysOverdue: r.daysOverdue,
     };
