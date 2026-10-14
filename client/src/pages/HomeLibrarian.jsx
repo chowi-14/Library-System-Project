@@ -544,7 +544,7 @@ function SubcategoryPicker({ options, disabled, placeholder, ...inputProps }) {
   );
 }
 
-function BookFormModal({ book, books = [], ask, onClose, onSave }) {
+function BookFormModal({ book, books = [], ask, onClose: closeNow, onSave }) {
   const editing = !!book;
   const isData = !!book?.image && book.image.startsWith("data:");
   const [form, setForm] = useState(() =>
@@ -589,12 +589,6 @@ function BookFormModal({ book, books = [], ask, onClose, onSave }) {
 
   useEffect(() => { firstRef.current?.focus(); }, []);
   useEffect(() => { setImgOk(null); }, [previewSrc]);
-  useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const err = (k) => touched[k] && errors[k];
   const bind = (k) => ({
     value: form[k],
@@ -667,6 +661,21 @@ function BookFormModal({ book, books = [], ask, onClose, onSave }) {
     : [];
   const imageChanged = original ? (upload ? upload.data : null) !== (isData ? book.image : null) : false;
   const hasChanges = !editing || changedFields.length > 0 || imageChanged;
+
+  const dirty = editing
+    ? changedFields.length > 0 || imageChanged
+    : Object.keys(EMPTY_FORM).some((k) => norm(form[k]) !== norm(EMPTY_FORM[k])) || !!upload;
+
+  const onClose = () =>
+    dirty
+      ? ask("Discard Changes", "You have unsaved changes. Discard them?", "Yes, discard", closeNow, true)
+      : closeNow();
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
     return (
     <ModalFrame

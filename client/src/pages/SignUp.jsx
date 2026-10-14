@@ -109,11 +109,11 @@ function Field({ icon: Icon, name, type = "text", placeholder, values, errors, t
   return (
     <div>
       <div
-        className={`flex items-center gap-3 border-b pb-2 ${
-          showError ? "border-red-300" : "border-[#f3d9c0]/70"
-        } focus-within:border-[#f3d9c0]`}
+        className={`flex items-center gap-3 border-b pb-1 ${
+          showError ? "border-red-700" : "border-black"
+        }`}
       >
-        {Icon && <Icon size={18} className="shrink-0 text-[#f3d9c0]" />}
+        {Icon && <Icon size={24} className="shrink-0 text-black" />}
         <input
           name={name}
           type={isPassword && showPassword ? "text" : type}
@@ -123,21 +123,21 @@ function Field({ icon: Icon, name, type = "text", placeholder, values, errors, t
           onBlur={onBlur}
           aria-invalid={!!showError}
           aria-describedby={showError ? `${name}-error` : undefined}
-          className="w-full bg-transparent text-lg text-[#f3d9c0] placeholder:text-[#f3d9c0]/60 outline-none"
+          className="w-full bg-transparent text-lg text-black placeholder:text-black/50 focus:outline-none"
         />
         {isPassword && (
           <button
             type="button"
             onClick={() => setShowPassword((s) => !s)}
             aria-label={showPassword ? "Hide password" : "Show password"}
-            className="shrink-0 text-[#f3d9c0]"
+            className="shrink-0 text-black"
           >
             <EyeIcon off={showPassword} />
           </button>
         )}
       </div>
       {showError && (
-        <p id={`${name}-error`} className="mt-1 text-sm text-red-300">
+        <p id={`${name}-error`} className="mt-1 text-sm text-red-700">
           {errors[name]}
         </p>
       )}
@@ -148,8 +148,8 @@ function Field({ icon: Icon, name, type = "text", placeholder, values, errors, t
 function Brand() {
   return (
     <div className="flex items-center gap-4">
-      <img src={crest} alt="Hogwarts crest" className="h-[72px] w-[72px] object-contain" />
-      <h1 className="text-5xl leading-[0.95]">
+      <img src={crest} alt="Hogwarts crest" className="h-24 w-20 shrink-0 object-contain" />
+      <h1 className="text-5xl leading-[0.95] text-black">
         Hogwarts
         <br />
         Library
@@ -214,23 +214,23 @@ export default function SignUp() {
   const fieldProps = { values, errors, touched, onChange: handleChange, onBlur: handleBlur };
 
   return (
-    <main className="min-h-screen bg-[#4a1a1f] font-serif text-[#f3d9c0] flex items-center justify-center p-6">
-      <div className="grid w-full max-w-5xl items-center gap-10 md:grid-cols-[1fr_1.5fr]">
+    <main className="flex min-h-screen items-center justify-center bg-[#F7DDB8] px-6 py-10 font-['Almendra',serif] text-black">
+      <div className="grid w-full max-w-6xl items-center gap-12 md:grid-cols-2">
 
-        <section className="mx-auto w-full max-w-md">
+        <section className="mx-auto w-full max-w-sm md:order-2">
           <Brand />
 
           {step === "role" ? (
-            <div className="mt-8">
-              <h2 className="text-2xl">Create Account to explore the library</h2>
-              <p className="mt-3 text-sm text-[#f3d9c0]/80">
+            <div className="mt-6">
+              <h2 className="text-2xl text-black">Create Account to explore the library</h2>
+              <p className="mt-3 text-sm text-black">
                 Do you already have an account?{" "}
                 <Link to="/login" className="underline underline-offset-2">
                   Sign in now
                 </Link>
               </p>
 
-              <p className="mt-6 text-2xl">I am a:</p>
+              <p className="mt-6 text-2xl text-black">I am a:</p>
               <div className="mt-4 flex gap-6" role="group" aria-label="Account type">
                 {ROLES.map((r) => {
                   const Icon = r.icon;
@@ -239,11 +239,11 @@ export default function SignUp() {
                       key={r.id}
                       type="button"
                       onClick={() => chooseRole(r.id)}
-                      className="flex h-40 w-40 flex-col items-center justify-center gap-3 rounded-lg bg-[#f9dcc0] text-xl text-black
+                      className="flex h-40 w-40 flex-col items-center justify-center gap-3 rounded-lg border border-black/20 bg-white text-xl text-black
                                 transition duration-150 outline-none
-                                hover:-translate-y-1 hover:bg-white hover:shadow-lg
-                                active:translate-y-0 active:scale-95 active:bg-[#f3c79a]
-                                focus-visible:ring-4 focus-visible:ring-[#f3d9c0]"
+                                hover:-translate-y-1 hover:shadow-lg
+                                active:translate-y-0 active:scale-95 active:bg-[#F7DDB8]
+                                focus-visible:ring-4 focus-visible:ring-[#4A1F1F]"
                     >
                       <Icon className="h-16 w-16 text-black" />
                       {r.label}
@@ -253,9 +253,9 @@ export default function SignUp() {
               </div>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} noValidate className="mt-8">
-              <h2 className="text-xl">Create Account to explore our library</h2>
-              <p className="mt-2 text-sm text-[#f3d9c0]/80">
+            <form onSubmit={handleSubmit} noValidate className="mt-6">
+              <h2 className="text-2xl text-black">Create Account to explore our library</h2>
+              <p className="mt-3 text-sm text-black">
                 Do you already have an account?{" "}
                 <Link to="/login" className="underline underline-offset-2">
                   Sign in now
@@ -286,26 +286,26 @@ export default function SignUp() {
                     <Field icon={BookOpen} name="course" placeholder="Enter your course" {...fieldProps} />
                     <div>
                       <div
-                        className={`flex items-center gap-3 border-b pb-2 ${
-                          touched.yearLevel && errors.yearLevel ? "border-red-300" : "border-[#f3d9c0]/70"
-                        } focus-within:border-[#f3d9c0]`}
+                        className={`flex items-center gap-3 border-b pb-1 ${
+                          touched.yearLevel && errors.yearLevel ? "border-red-700" : "border-black"
+                        }`}
                       >
-                        <GraduationCap size={18} className="shrink-0 text-[#f3d9c0]" />
+                        <GraduationCap size={24} className="shrink-0 text-black" />
                         <select
                           name="yearLevel"
                           value={values.yearLevel}
                           onChange={handleChange}
                           onBlur={handleBlur}
-                          className="w-full bg-transparent text-lg text-[#f3d9c0] outline-none"
+                          className="w-full bg-transparent text-lg text-black focus:outline-none"
                         >
-                          <option value="" className="bg-[#4a1a1f]">Year level</option>
+                          <option value="">Year level</option>
                           {YEAR_LEVELS.map((y) => (
-                            <option key={y} value={y} className="bg-[#4a1a1f]">{y}</option>
+                            <option key={y} value={y}>{y}</option>
                           ))}
                         </select>
                       </div>
                       {touched.yearLevel && errors.yearLevel && (
-                        <p className="mt-1 text-sm text-red-300">{errors.yearLevel}</p>
+                        <p className="mt-1 text-sm text-red-700">{errors.yearLevel}</p>
                       )}
                     </div>
                   </>
@@ -321,14 +321,14 @@ export default function SignUp() {
               </div>
 
               {submitError && (
-                <p role="alert" className="mt-4 text-sm text-red-300">
+                <p role="alert" className="mt-4 text-sm text-red-700">
                   {submitError}
                 </p>
               )}
 
               <button
                 type="submit"
-                className="mt-6 w-full rounded-md bg-[#f9dcc0] py-3 text-lg text-[#4a1a1f] hover:brightness-95"
+                className="mt-6 w-full rounded-md bg-[#4A1F1F] py-2.5 text-lg text-white transition hover:bg-[#3a1717] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4A1F1F] focus-visible:ring-offset-2 focus-visible:ring-offset-[#F7DDB8]"
               >
                 Sign Up
               </button>
@@ -336,18 +336,18 @@ export default function SignUp() {
               <button
                 type="button"
                 onClick={() => setStep("role")}
-                className="mt-4 text-sm underline underline-offset-2 text-[#f3d9c0]/80"
+                className="mt-4 text-sm text-black underline underline-offset-2"
               >
                 Change account type ({role})
               </button>
             </form>
           )}
         </section>
-        <section className="hidden justify-center md:flex">
+        <section className="hidden justify-center md:order-1 md:flex">
           <img
             src={step === "role" ? girl : books}
             alt={step === "role" ? "Student carrying a stack of books" : "Stack of magical books"}
-            className="max-h-[420px] w-auto object-contain"
+           className="w-full max-w-lg object-contain"
           />
         </section>
       </div>

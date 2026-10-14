@@ -193,7 +193,7 @@ function PasswordInput({ value, onChange, hasError }) {
     )
 }
 
-function PasswordModal({ ask, onClose, onDone }) {
+function PasswordModal({ ask, onClose: closeNow, onDone }) {
     const [f, setF] = useState({ cur: "", next: "", conf: "" })
     const [touched, setTouched] = useState(false)
     const [error, setError] = useState("")
@@ -235,6 +235,11 @@ function PasswordModal({ ask, onClose, onDone }) {
             setSaving(false)
         }
     }
+
+    const onClose = () =>
+        f.cur || f.next || f.conf
+            ? ask("Discard Changes", "You have unsaved changes. Discard them?", "Yes, discard", closeNow)
+            : closeNow()
 
     const rows = [
         ["cur", "Current password"],
@@ -280,7 +285,7 @@ function PasswordModal({ ask, onClose, onDone }) {
     )
 }
 
-function AddLibrarianModal({ ask, onClose, onDone }) {
+function AddLibrarianModal({ ask, onClose: closeNow, onDone }) {
     const [f, setF] = useState({
         firstName: "", lastName: "", email: "", idNumber: "",
         phone_number: "", password: "",
@@ -335,6 +340,11 @@ function AddLibrarianModal({ ask, onClose, onDone }) {
             setSaving(false)
         }
     }
+
+    const onClose = () =>
+        Object.values(f).some((v) => v.trim())
+            ? ask("Discard Changes", "You have unsaved changes. Discard them?", "Yes, discard", closeNow)
+            : closeNow()
 
     const rows = [
         ["firstName", "First name", "text"],
@@ -752,12 +762,17 @@ export default function Profile() {
         setEditing(true)
     }
 
-    const cancelEdit = () => {
+    const doCancel = () => {
         setDraftAvatar(undefined)
         setDraft(profile)
         setErrors({})
         setEditing(false)
     }
+
+    const cancelEdit = () =>
+        changed
+            ? ask("Discard Changes", "You have unsaved changes. Discard them?", "Yes, discard", doCancel)
+            : doCancel()
 
     const handleChange = (e) => {
         const next = { ...draft, [e.target.name]: e.target.value }
