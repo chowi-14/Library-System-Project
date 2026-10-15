@@ -53,6 +53,7 @@ const btnDecline = `${btnBase} border border-[#c0121f]/30 bg-[#c0121f]/10 text-[
 const btnCompact = "cursor-pointer rounded-lg px-3 py-2 text-[13px] font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#eea51c]/60 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
 const btnImport = `${btnCompact} border border-[#0c7a43] bg-[#0c7a43] text-white shadow-sm hover:bg-[#09653a]`;
 const btnAdd = `${btnCompact} border border-[#eea51c] bg-[#eea51c] text-[#FFFFFF] shadow-sm hover:bg-[#d8940f]`;
+const btnDownload = `${btnCompact} border border-[#0c7a43] bg-[#0c7a43] text-white shadow-sm hover:bg-[#09653a]`;
 const btnReturn = "cursor-pointer rounded-md border border-[#0c7a43] bg-[#0c7a43] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#09653a] disabled:cursor-not-allowed disabled:opacity-50";
 const btnIssue = "cursor-pointer rounded-md border border-[#eea51c] bg-[#eea51c] px-3.5 py-1.5 text-xs font-semibold text-[#FFFFFF] transition hover:bg-[#d8940f] disabled:cursor-not-allowed disabled:opacity-50";
 const btnBrowse = "cursor-pointer rounded-lg border border-[#eea51c] bg-[#eea51c] px-4 py-2 text-[13px] font-semibold text-[#FFFFFF] shadow-sm transition hover:bg-[#d8940f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#eea51c]/60";
@@ -951,6 +952,26 @@ const parseCsv = (input) => {
 };
 
 const cleanIsbn = (s) => String(s ?? "").replace(/[\s-]/g, "").toUpperCase();
+
+// ---------- CSV export ----------
+const csvCell = (v) => {
+  let s = String(v ?? "");
+  if (/^[=+\-@\t\r]/.test(s) && !/^[+-]?[\d\s().-]+$/.test(s)) s = "'" + s;
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+// columns = [[label, (row) => value], ...]
+const downloadCsv = (filename, columns, rows) => {
+  const head = columns.map(([label]) => csvCell(label)).join(",");
+  const body = rows.map((r) => columns.map(([, get]) => csvCell(get(r))).join(",")).join("\r\n");
+  const blob = new Blob(["\uFEFF" + head + "\r\n" + body], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
 
 // MM/DD/YYYY (or M/D/YYYY, also with dashes) -> YYYY-MM-DD, or "" if invalid
 const toIsoDate = (s) => {
@@ -2086,15 +2107,15 @@ function EmptyChart({ text }) {
 
 function ChartCard({ title, purpose, controls, wide, children }) {
   return (
-    <section className={`rounded-2xl border border-[#4a1f1f]/15 bg-white p-5 shadow-sm ${wide ? "lg:col-span-2" : ""}`}>
+    <section className={`flex min-w-0 flex-col rounded-2xl border border-[#4a1f1f]/15 bg-white p-4 shadow-sm sm:p-5 ${wide ? "lg:col-span-2" : ""}`}>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-base font-bold tracking-tight text-[#4a1f1f]">{title}</h3>
           <p className="mt-0.5 text-xs text-gray-500">{purpose}</p>
         </div>
-        {controls && <div className="flex flex-wrap items-center gap-2">{controls}</div>}
+        {controls && <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">{controls}</div>}
       </div>
-      {children}
+      <div className="flex flex-1 flex-col justify-center">{children}</div>
     </section>
   );
 }
@@ -2102,6 +2123,19 @@ function ChartCard({ title, purpose, controls, wide, children }) {
 const DONUT_COLORS = ["#4a1f1f", "#eea51c", "#0c7a43", "#0b4a8b", "#c0121f", "#7C3AED", "#0e7490", "#9CA3AF"];
 
 const cutLabel = (s, n = 22) => (String(s).length > n ? `${String(s).slice(0, n - 1)}…` : s);
+
+const useNarrow = (px = 640) => {
+  const query = `(max-width: ${px - 1}px)`;
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const on = () => setNarrow(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, [query]);
+  return narrow;
+};
 
 // Hover card for Top Borrowed Books: cover, title, author, genre
 function BookTooltip({ active, payload }) {
@@ -2125,13 +2159,14 @@ function BookTooltip({ active, payload }) {
 
 // Horizontal bars with a soft gradient and a light track behind each bar
 function HBars({ rows, color = "#4a1f1f", suffix = "", unit = "transactions", max: fixedMax, empty, tooltip }) {
+  const narrow = useNarrow();
   if (!rows.length) return <EmptyChart text={empty} />;
   const top = Math.max(...rows.map((r) => r.value), 1);
   const gid = `hb-${color.replace("#", "")}`;
 
   return (
     <ResponsiveContainer debounce={200} width="100%" height={rows.length * 46 + 28}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 64, left: 0, bottom: 0 }} barCategoryGap="24%">
+      <BarChart data={rows} layout="vertical" margin={{ top: 4, right: narrow ? 32 : 64, left: 0, bottom: 0 }} barCategoryGap="24%">
         <defs>
           <linearGradient id={gid} x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%" stopColor={color} stopOpacity={0.55} />
@@ -2144,7 +2179,7 @@ function HBars({ rows, color = "#4a1f1f", suffix = "", unit = "transactions", ma
           tick={AXIS_TICK_SM} axisLine={false} tickLine={false} allowDecimals={false}
           tickFormatter={(v) => `${v}${suffix}`}
         />
-        <YAxis type="category" dataKey="label" width={130} tick={AXIS_TICK} tickFormatter={(s) => cutLabel(s)} axisLine={false} tickLine={false} />
+        <YAxis type="category" dataKey="label" width={narrow ? 84 : 130} tick={AXIS_TICK} tickFormatter={(s) => cutLabel(s, narrow ? 12 : 22)} axisLine={false} tickLine={false} />
         <Tooltip
           content={tooltip || <ChartTooltip suffix={suffix} unit={unit} />}
           cursor={{ fill: "rgba(0,0,0,0.03)" }}
@@ -2426,7 +2461,7 @@ function Analytics({ books, transactions, students }) {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-2">
         <ChartCard
           wide
           title="Borrowing Trends Over Time"
@@ -2483,7 +2518,6 @@ function Analytics({ books, transactions, students }) {
         </ChartCard>
 
         <ChartCard
-          wide
           title="Borrowing by Academic Department"
           purpose="Which departments generate the most borrowing transactions."
           controls={<CatSelect value={deptCat} onChange={setDeptCat} />}
@@ -3631,6 +3665,71 @@ export default function HomeLibrarian() {
   const shownStudents = foundStudents.slice((sCur - 1) * ROWS_PER_PAGE, sCur * ROWS_PER_PAGE);
   const openStudent = students.find((s) => s.email === studentEmail);
 
+  const day = (v) => (v ? String(v).slice(0, 10) : "");
+  const usDate = (iso) => (day(iso) ? `${day(iso).slice(5, 7)}/${day(iso).slice(8, 10)}/${day(iso).slice(0, 4)}` : "");
+
+  const exportCsv = (name, cols, rows) => {
+    if (!rows.length) return notify("Nothing to export.");
+    downloadCsv(`${name}_${todayISO()}.csv`, cols, rows);
+    notify(`Exported ${rows.length} ${rows.length === 1 ? "row" : "rows"} to ${name}.csv`);
+  };
+
+  const exportBooks = () =>
+    exportCsv("books", [
+      ["Title", (b) => b.title],
+      ["Author", (b) => b.author],
+      ["ISBN", (b) => b.isbn],
+      ["Publisher", (b) => b.publisher],
+      ["Category", (b) => b.category],
+      ["Published", (b) => usDate(b.published)],
+      ["Copies", (b) => b.totalCopies ?? 1],
+      ["Pages", (b) => b.pages],
+      ["Description", (b) => b.description],
+      ["Image", (b) => (String(b.image || "").startsWith("data:") ? "" : b.image)],
+      ["Subcategory", (b) => b.subcategory],
+      ["Shelf", (b) => b.shelf],
+      ["Available Copies", (b) => copiesLeft(b)],
+    ], filteredBooks);
+
+  const exportTransactions = () =>
+    exportCsv("transactions", [
+      ["Title", (t) => t.title],
+      ["Borrower", (t) => t.borrower],
+      ["Borrower Email", (t) => t.borrowerEmail],
+      ["Borrowed On", (t) => day(t.borrowedOn)],
+      ["Due Date", (t) => day(t.due)],
+      ["Return Date", (t) => day(t.returned)],
+      ["Status", (t) => (t.overdue ? "Overdue" : t.status)],
+      ["Days Overdue", (t) => t.daysOverdue || 0],
+      ["Fine (PHP)", (t) => Number(t.fine || 0).toFixed(2)],
+      ["Fine Paid", (t) => (t.fine > 0 ? (t.finePaid ? "Yes" : "No") : "")],
+    ], filteredTx);
+
+  const exportBorrowers = () =>
+    exportCsv("borrowers", [
+      ["Full Name", (s) => s.fullName],
+      ["Email", (s) => s.email],
+      ["ID Number", (s) => s.idNumber],
+      ["Role", (s) => s.role],
+      ["Course / Department", (s) => (s.role === "professor" ? s.department : s.course)],
+      ["Year Level", (s) => s.yearLevel],
+      ["Phone", (s) => s.phone],
+      ["Active Loans", (s) => s.activeLoans],
+      ["Overdue Loans", (s) => s.overdueLoans],
+      ["Unpaid Fines (PHP)", (s) => s.unpaidFines.toFixed(2)],
+      ["Total Borrowed", (s) => s.totalLoans],
+    ], foundStudents.map((s) => {
+      const mine = transactions.filter((t) => t.borrowerEmail === s.email);
+      const active = mine.filter((t) => !isReturned(t));
+      return {
+        ...s,
+        activeLoans: active.length,
+        overdueLoans: active.filter((t) => t.overdue).length,
+        unpaidFines: mine.filter((t) => t.fine > 0 && !t.finePaid).reduce((n, t) => n + t.fine, 0),
+        totalLoans: mine.length,
+      };
+    }));
+
   const goStat = (label) => {
     if (label === "Total Book Copies") setTab("books");
     else if (label === "Available Copies") { setBookSort({ key: "status", dir: "asc" }); setTab("books"); }
@@ -3715,7 +3814,10 @@ export default function HomeLibrarian() {
 
         {tab === "books" && (
           <section className="mb-10">
-            <h2 className="mb-0.5 text-xl font-bold">Book Catalog</h2>
+            <div className="mb-0.5 flex flex-wrap items-center gap-3">
+              <h2 className="text-xl font-bold">Book Catalog</h2>
+              <button className={btnDownload} onClick={exportBooks}>Download</button>
+            </div>
             <p className="mb-2 text-[13px] text-gray-500">
               {filteredBooks.length} {filteredBooks.length === 1 ? "title" : "titles"} in the catalog
             </p>
@@ -3759,6 +3861,7 @@ export default function HomeLibrarian() {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                   />
+                  
                   <button className={btnImport} onClick={() => setShowImport(true)}>Bulk Import</button>
                   <button className={btnAdd} onClick={() => setShowModal(true)}>+ Add Book</button>
                 </div>
@@ -3771,7 +3874,13 @@ export default function HomeLibrarian() {
         {tab === "borrowers" && (
           <section className="mb-10">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[#4a1f1f]/15">
-              <div className="flex gap-1">
+              <div className="flex items-center gap-1">
+                <button
+                  className={`${btnDownload} order-last ml-3`}
+                  onClick={borrowerView === "lookup" ? exportBorrowers : exportTransactions}
+                >
+                  Download
+                </button>
                 {[["lookup", "Lookup"], ["transactions", "Transactions"]].map(([k, label]) => (
                   <button
                     key={k}
@@ -3801,6 +3910,7 @@ export default function HomeLibrarian() {
                   <p className="p-6 text-center text-gray-500">No students found.</p>
                 ) : (
                   <div className="flex flex-col gap-2.5">
+
                     {shownStudents.map((s) => {
                       const active = transactions.filter((t) => t.borrowerEmail === s.email && !isReturned(t));
                       const od = active.filter((t) => t.overdue).length;
@@ -3840,6 +3950,7 @@ export default function HomeLibrarian() {
                       {f === "All Statuses" ? "All" : f} ({txCount(f)})
                     </button>
                   ))}
+                  
                   <button className={`${btnPrimary} relative ml-auto py-1.5`} onClick={() => setShowVerify(true)}>
                     Verify Return
                     {txCount("Pending Return") > 0 && (
