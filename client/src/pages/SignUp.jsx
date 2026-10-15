@@ -148,7 +148,9 @@ function Field({ icon: Icon, name, type = "text", placeholder, values, errors, t
 function Brand() {
   return (
     <div className="flex items-center gap-4">
-      <img src={crest} alt="Hogwarts crest" className="h-24 w-20 shrink-0 object-contain" />
+      <Link to="/setup" aria-label="Librarian setup" className="shrink-0">
+  <img src={crest} alt="Hogwarts crest" className="h-24 w-20 object-contain" />
+</Link>
       <h1 className="text-5xl leading-[0.95] text-black">
         Hogwarts
         <br />

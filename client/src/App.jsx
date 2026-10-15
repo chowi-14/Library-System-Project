@@ -39,8 +39,8 @@ export default function App() {
         <Route path="/home" element={<ProtectedRoute><Home /></ProtectedRoute>} />
         <Route path="/student/profile" element={<ProtectedRoute><ProfileRoute /></ProtectedRoute>} />
         <Route path="/librarian/profile" element={<ProtectedRoute><ProfileRoute /></ProtectedRoute>} />
+        <Route path="/setup" element={<PublicRoute><Setup /></PublicRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
-        <Route path="/setup" element={<Setup />} />
       </Routes>
     </AuthProvider>
   );

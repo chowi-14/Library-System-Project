@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import crest from "../assets/crest.webp";
+import illustration from "../assets/illustration.webp";
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:5001/api";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -34,7 +35,6 @@ const validate = (v) => {
 
 export default function Setup() {
   const navigate = useNavigate();
-  const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [shown, setShown] = useState({});
@@ -42,12 +42,6 @@ export default function Setup() {
     Object.fromEntries(FIELDS.map((f) => [f.name, ""]))
   );
 
-  useEffect(() => {
-    fetch(`${API}/auth/setup-status`)
-      .then((r) => r.json())
-      .then((d) => (d.needsSetup ? setReady(true) : navigate("/login", { replace: true })))
-      .catch(() => navigate("/login", { replace: true }));
-  }, [navigate]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -78,11 +72,15 @@ export default function Setup() {
     }
   };
 
-  if (!ready) return null;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#F7DDB8] px-6 py-10 font-['Almendra',serif]">
-      <div className="w-full max-w-sm">
+      <div className="grid w-full max-w-6xl items-center gap-12 md:grid-cols-2">
+        <div className="hidden justify-center md:flex">
+          <img src={illustration} alt="Students in the Hogwarts library" className="w-full max-w-lg" />
+        </div>
+
+        <div className="mx-auto w-full max-w-sm">
         <div className="mb-6 flex items-center gap-4">
           <img src={crest} alt="Hogwarts crest" className="h-24 w-20 shrink-0 object-contain" />
           <h1 className="text-5xl leading-[0.95] text-black">
@@ -91,8 +89,11 @@ export default function Setup() {
             Library
           </h1>
         </div>
-        <h2 className="text-2xl text-black">First-time setup</h2>
-        <p className="mt-2 text-sm text-black">Create the head librarian account.</p>
+        <h2 className="text-2xl text-black">Librarian setup</h2>
+        <p className="mt-3 text-sm text-black">
+          Create a librarian account. You need the setup key.{" "}
+          <Link to="/login" className="underline underline-offset-2">Back to sign in</Link>
+        </p>
 
         <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-5">
           {FIELDS.map((f) => {
@@ -129,6 +130,7 @@ export default function Setup() {
             {saving ? "Creating..." : "Create librarian account"}
           </button>
         </form>
+        </div>
       </div>
     </main>
   );

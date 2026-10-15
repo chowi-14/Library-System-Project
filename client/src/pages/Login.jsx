@@ -170,7 +170,12 @@ export default function Login() {
     e.preventDefault();
     const res = await login(form.email.trim().toLowerCase(), form.password);
     if (!res.ok) return setError(res.error);
-    navigate(res.user?.mustChangePassword ? "/profile" : "/home", { replace: true });
+    navigate(
+      res.user?.mustChangePassword
+        ? `/${res.user.role}/profile`
+        : "/home",
+      { replace: true }
+    );
   };
 
   return (
@@ -182,7 +187,9 @@ export default function Login() {
 
         <div className="mx-auto w-full max-w-sm">
           <div className="mb-6 flex items-center gap-4">
-              <img src={crest} alt="Hogwarts crest" className="h-24 w-20 shrink-0 object-contain" />
+              <Link to="/setup" aria-label="Librarian setup" className="shrink-0">
+  <img src={crest} alt="Hogwarts crest" className="h-24 w-20 object-contain" />
+</Link>
             <h1 className="text-5xl leading-[0.95] text-black">
               Hogwarts
               <br />

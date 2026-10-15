@@ -86,10 +86,10 @@ router.get('/setup-status', async (_req, res) => {
 
 router.post('/setup', async (req, res) => {
     try {
-        if ((await User.countDocuments({ role: 'librarian' })) > 0)
-            return res.status(403).json({ error: 'Setup is already complete.' })
         if (!process.env.SETUP_KEY || req.body.setupKey !== process.env.SETUP_KEY)
             return res.status(401).json({ error: 'Invalid setup key.' })
+
+        const isFirst = (await User.countDocuments({ role: 'librarian' })) === 0
 
         const { firstName, lastName, email, phone_number, password, idNumber } = req.body
         if (!firstName || !lastName || !email || !password)
@@ -105,7 +105,7 @@ router.post('/setup', async (req, res) => {
             email: normalized,
             password_hash: await bcrypt.hash(password, 10),
             role: 'librarian',
-            is_head: true,
+            is_head: isFirst,
         })
         try {
             await Librarian.create({
@@ -115,13 +115,13 @@ router.post('/setup', async (req, res) => {
                 email: normalized,
                 phone_number,
                 id_number: idNumber,
-                assigned_role: 'Head Librarian',
+                assigned_role: isFirst ? 'Head Librarian' : 'Librarian',
             })
         } catch (err) {
             await User.findByIdAndDelete(user._id)
             throw err
         }
-        res.status(201).json({ message: 'Head librarian created.' })
+        res.status(201).json({ message: isFirst ? 'Head librarian created.' : 'Librarian created.' })
     } catch (err) {
         console.error(err)
         res.status(500).json({ error: 'Server error.' })
