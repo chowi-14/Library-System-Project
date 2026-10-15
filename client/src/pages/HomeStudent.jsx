@@ -32,8 +32,7 @@ const categories = [
   { slug: "fiction", label: "Fiction", tagline: "Stories beyond the curriculum.", icon: BookOpen, color: "#e99b1c" },
   { slug: "non-fiction", label: "Non-Fiction", tagline: "Real magic, real history.", icon: Scroll, color: "#c0151f" },
   { slug: "academic", label: "Academic", tagline: "The books behind every lesson.", icon: GraduationCap, color: "#0e3f8a" },
-  { slug: "restricted", label: "Restricted", tagline: "Forbidden knowledge. Read at your own risk.", icon: Skull, color: "#0a7a46" },
-];
+]
 
 const toStudentBook = (b) => ({
   id: b.id,

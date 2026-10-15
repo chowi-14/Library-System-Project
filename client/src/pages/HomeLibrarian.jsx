@@ -273,7 +273,7 @@ const Badge = ({ status, overdue }) => {
   );
 };
 
-const CATEGORIES = ["Fiction", "Non-Fiction", "Academic", "Restricted"];
+const CATEGORIES = ["Fiction", "Non-Fiction", "Academic"];
 const EMPTY_FORM = { title: "", author: "", isbn: "", publisher: "", category: "", subcategory: "", published: "", pages: "", description: "", image: "", copies: "1", shelf: "" };
 const DESC_MAX = 300;
 const todayISO = () => new Date().toISOString().slice(0, 10);
