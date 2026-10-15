@@ -271,4 +271,32 @@ router.put('/password', auth, async (req, res) => {
     }
 })
 
+router.post('/forgot-password', async (req, res) => {
+    try {
+        const { email, idNumber, newPassword } = req.body
+        if (!email || !idNumber || !newPassword)
+            return res.status(400).json({ error: 'Email, ID number and new password are required.' })
+        if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword))
+            return res.status(400).json({ error: 'Password must be 8+ characters with letters and numbers.' })
+
+        const mismatch = { error: 'Email and ID number do not match any account.' }
+
+        const user = await User.findOne({ email: email.trim().toLowerCase() })
+        if (!user || !user.is_active) return res.status(400).json(mismatch)
+
+        const profile = await profileModel(user.role).findOne({ user_id: user._id })
+        const stored = String(profile?.id_number ?? '').trim().toLowerCase()
+        if (!stored || stored !== String(idNumber).trim().toLowerCase())
+            return res.status(400).json(mismatch)
+
+        user.password_hash = await bcrypt.hash(newPassword, 10)
+        user.must_change_password = false
+        await user.save()
+        res.json({ message: 'Password reset.' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Server error.' })
+    }
+})
+
 module.exports = router
