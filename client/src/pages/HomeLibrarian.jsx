@@ -53,7 +53,7 @@ const btnDecline = `${btnBase} border border-[#c0121f]/30 bg-[#c0121f]/10 text-[
 const btnCompact = "cursor-pointer rounded-lg px-3 py-2 text-[13px] font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#eea51c]/60 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
 const btnImport = `${btnCompact} border border-[#0c7a43] bg-[#0c7a43] text-white shadow-sm hover:bg-[#09653a]`;
 const btnAdd = `${btnCompact} border border-[#eea51c] bg-[#eea51c] text-[#FFFFFF] shadow-sm hover:bg-[#d8940f]`;
-const btnDownload = `${btnCompact} border border-[#0c7a43] bg-[#0c7a43] text-white shadow-sm hover:bg-[#09653a]`;
+const btnDownload = "cursor-pointer rounded-md border border-[#0c7a43] bg-[#0c7a43] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#09653a] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#eea51c]/60 disabled:cursor-not-allowed disabled:opacity-60";
 const btnReturn = "cursor-pointer rounded-md border border-[#0c7a43] bg-[#0c7a43] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#09653a] disabled:cursor-not-allowed disabled:opacity-50";
 const btnIssue = "cursor-pointer rounded-md border border-[#eea51c] bg-[#eea51c] px-3.5 py-1.5 text-xs font-semibold text-[#FFFFFF] transition hover:bg-[#d8940f] disabled:cursor-not-allowed disabled:opacity-50";
 const btnBrowse = "cursor-pointer rounded-lg border border-[#eea51c] bg-[#eea51c] px-4 py-2 text-[13px] font-semibold text-[#FFFFFF] shadow-sm transition hover:bg-[#d8940f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#eea51c]/60";
@@ -2414,7 +2414,7 @@ function Analytics({ books, transactions, students }) {
   const engagement = [...eligible]
     .map(([label, total]) => {
       const b = borrowersIn.get(label)?.size || 0;
-      return { label, value: Math.round((b / total) * 1000) / 10, sub: `(${b} of ${total})` };
+      return { label, value: Math.round((b / total) * 1000) / 10, sub: `(${b} of ${total})`, borrowers: b, total };
     })
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 
@@ -2429,9 +2429,96 @@ function Analytics({ books, transactions, students }) {
     ["Different books borrowed", new Set(scoped.map((r) => r.bookId)).size],
   ];
 
+    const exportAnalytics = () => {
+    const line = (...cells) => cells.map(csvCell).join(",");
+    const sum = (list) => list.reduce((s, r) => s + r.value, 0);
+    const share = (v, t) => (t ? `${((v / t) * 100).toFixed(1)}%` : "0.0%");
+    const block = (title, header, body) => [
+      line(title),
+      line(...header),
+      ...(body.length ? body : [line("No data for the selected filters")]),
+      "",
+    ];
+    const roleLabel = { all: "All users", student: "Students", faculty: "Faculty" }[role];
+    const catTotal = sum(byCategory);
+    const subTotal = sum(bySub);
+    const deptTotal = sum(byDept);
+
+    const trendBody = trendTotal
+      ? [
+          ...buckets.map((b, i) => line(b.label, fmt(b.start), fmt(b.end), trendValues[i])),
+          line("Total", "", "", trendTotal),
+        ]
+      : [];
+
+    const out = [
+      line("Hogwarts Library - Analytics Report"),
+      line("Report period", start === end ? fmt(start) : `${fmt(start)} to ${fmt(end)}`),
+      line("Date basis", "Borrow date"),
+      line("Generated on", fmtWhen(new Date().toISOString())),
+      "",
+      ...block("SUMMARY", ["Metric", "Value"], kpis.map(([label, value]) => line(label, value))),
+
+      ...block(
+        `BORROWING TRENDS (${unit}; Category: ${trendCat}; Department: ${trendDept})`,
+        ["Period", "Period Start", "Period End", "Borrowings"],
+        trendBody
+      ),
+
+      ...block(
+        `TOP BORROWED BOOKS (Category: ${bookCat}; Subcategory: ${bookSub}; Top ${bookTop})`,
+        ["Rank", "Title", "Author", "Category", "Subcategory", "Times Borrowed"],
+        topBooks.map((r, i) =>
+          line(i + 1, r.label, r.book?.author || "", r.book?.category || "", r.book?.subcategory || "", r.value)
+        )
+      ),
+
+      ...block(
+        "BORROWING BY CATEGORY",
+        ["Category", "Borrowings", "Share of Total"],
+        byCategory.length
+          ? [...byCategory.map((r) => line(r.label, r.value, share(r.value, catTotal))), line("Total", catTotal, "100.0%")]
+          : []
+      ),
+
+      ...block(
+        `BORROWING BY SUBCATEGORY (Category: ${subCat}; Top ${subTop})`,
+        ["Subcategory", "Borrowings", "Share of Listed"],
+        bySub.length
+          ? [...bySub.map((r) => line(r.label, r.value, share(r.value, subTotal))), line("Total", subTotal, "100.0%")]
+          : []
+      ),
+
+      ...block(
+        `BORROWING BY ACADEMIC DEPARTMENT (Category: ${deptCat})`,
+        ["Department / Course", "Borrowings", "Share of Total"],
+        byDept.length
+          ? [...byDept.map((r) => line(r.label, r.value, share(r.value, deptTotal))), line("Total", deptTotal, "100.0%")]
+          : []
+      ),
+
+      ...block(
+        `BORROWING ENGAGEMENT BY DEPARTMENT (Users: ${roleLabel})`,
+        ["Department / Course", "Unique Borrowers", "Registered Users", "Engagement Rate"],
+        engagement.map((r) => line(r.label, r.borrowers, r.total, `${r.value.toFixed(1)}%`))
+      ),
+    ];
+
+    const blob = new Blob(["\uFEFF" + out.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `analytics_${start}_to_${end}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <section className="mb-10">
-      <h2 className="mb-0.5 text-xl font-bold">Analytics</h2>
+      <div className="mb-0.5 flex flex-wrap items-center gap-3">
+        <h2 className="text-xl font-bold">Analytics</h2>
+        <button type="button" className={btnDownload} onClick={exportAnalytics}>Download</button>
+      </div>
       <p className="mb-4 text-[13px] text-gray-500">
         {fmt(start)}{start !== end ? ` to ${fmt(end)}` : ""}
       </p>
@@ -3875,12 +3962,7 @@ export default function HomeLibrarian() {
           <section className="mb-10">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[#4a1f1f]/15">
               <div className="flex items-center gap-1">
-                <button
-                  className={`${btnDownload} order-last ml-3`}
-                  onClick={borrowerView === "lookup" ? exportBorrowers : exportTransactions}
-                >
-                  Download
-                </button>
+
                 {[["lookup", "Lookup"], ["transactions", "Transactions"]].map(([k, label]) => (
                   <button
                     key={k}
@@ -3894,12 +3976,15 @@ export default function HomeLibrarian() {
                 ))}
               </div>
               {borrowerView === "lookup" && (
-                <SearchInput
-                  className="mb-2 w-full sm:w-72"
-                  placeholder="Search by name, email, or phone"
-                  value={studentQuery}
-                  onChange={(e) => { setStudentQuery(e.target.value); setStudentPage(1); }}
-                />
+                <div className="mb-2 flex w-full items-center gap-2 sm:w-auto">
+                  <SearchInput
+                    className="min-w-0 flex-1 sm:w-72 sm:flex-none"
+                    placeholder="Search by name, email, or phone"
+                    value={studentQuery}
+                    onChange={(e) => { setStudentQuery(e.target.value); setStudentPage(1); }}
+                  />
+                  <button type="button" className={btnDownload} onClick={exportBorrowers}>Download</button>
+                </div>
               )}
             </div>
 
@@ -3951,20 +4036,26 @@ export default function HomeLibrarian() {
                     </button>
                   ))}
                   
-                  <button className={`${btnPrimary} relative ml-auto py-1.5`} onClick={() => setShowVerify(true)}>
-                    Verify Return
-                    {txCount("Pending Return") > 0 && (
-                      <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#c0121f] px-1 text-[11px] font-bold text-white ring-2 ring-white">
-                        {txCount("Pending Return")}
-                      </span>
-                    )}
-                  </button>
+
                 </div>
                 <SortableTable
                   columns={txCols}
                   rows={filteredTx}
                   resetKey={statusFilter}
                   defaultSort={{ key: "borrowedOn", dir: "desc" }}
+                  filters={
+                    <button type="button" className={btnDownload} onClick={exportTransactions}>Download</button>
+                  }
+                  toolbar={
+                    <button type="button" className={`${btnPrimary} relative py-1.5`} onClick={() => setShowVerify(true)}>
+                      Verify Return
+                      {txCount("Pending Return") > 0 && (
+                        <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#c0121f] px-1 text-[11px] font-bold text-white ring-2 ring-white">
+                          {txCount("Pending Return")}
+                        </span>
+                      )}
+                    </button>
+                  }
                   emptyText={transactions.length === 0 ? "No transactions yet." : undefined}
                 />
               </>
