@@ -306,7 +306,7 @@ const validate = (f) => {
 
   const author = f.author.trim();
   if (!author) e.author = "Author name is required.";
-  else if (!/^\p{L}[\p{L}\s.'-]*$/u.test(author)) e.author = "Use letters only.";
+  else if (!/^[\p{L}\p{N}][\p{L}\p{N}\s.,'&-]*$/u.test(author)) e.author = "Use letters, numbers, spaces and . , & ' - only.";
   else if (author.length > 60) e.author = "Keep it under 60 characters.";
 
   const publisher = f.publisher.trim();
@@ -977,9 +977,29 @@ const readImport = (text, existing, activeFor = () => 0) => {
     head[k] = i;
   });
   const missing = REQUIRED_COLS.filter((k) => !(k in head));
-  if (missing.length) return { rows: [], error: `Missing column(s): ${missing.join(", ")}.` };
+  if (missing.length) return { rows: [], error: `The header row is missing: ${missing.join(", ")}. Add them exactly as named in the template.` };
 
   const cell = (r, k) => (head[k] === undefined ? "" : (r[head[k]] ?? "").trim());
+
+  const colLetter = (n) => {
+    let s = "";
+    for (n += 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+    return s;
+  };
+  const LABELS = {
+    title: "Title", author: "Author", isbn: "ISBN", publisher: "Publisher",
+    category: "Category", published: "Published date", pages: "Pages",
+    copies: "Copies", description: "Description", image: "Image link",
+    subcategory: "Subcategory", shelf: "Shelf",
+  };
+  const at = (col, line) => {
+    const idx = head[col];
+    const name = LABELS[col] || col;
+    return idx === undefined
+      ? `Row ${line}, ${name}: `
+      : `Row ${line}, ${name} (cell ${colLetter(idx)}${line}): `;
+  };
+  const found = (raw) => (raw ? ` You entered "${raw}".` : "");
 
   const byIsbn = new Map();
   const byTitle = new Map();
@@ -1008,24 +1028,27 @@ const readImport = (text, existing, activeFor = () => 0) => {
     const e = validate(form);
     if (!cat) e.category = `Category must be one of: ${CATEGORIES.join(", ")}.`;
     if (!form.published) e.published = "Use the date format MM/DD/YYYY (e.g. 09/21/1937).";
-    const errors = Object.values(e);
+    const errors = Object.entries(e).map(([col, msg]) => at(col, i + 2) + msg + found(cell(r, col)));
     const row = { line: i + 2, label: form.title || "(no title)", form, errors, status: "invalid", match: null, changes: [], note: "" };
     if (errors.length) return row;
 
     const isbn = cleanIsbn(form.isbn);
     const tKey = keyOf(form.title, form.author);
 
-    const prior = fileSeen.get(isbn) ?? fileSeen.get(tKey);
+    const priorByIsbn = fileSeen.get(isbn);
+    const prior = priorByIsbn ?? fileSeen.get(tKey);
     if (prior) {
       row.status = "duplicate";
-      row.note = `Same book as row ${prior} in this file.`;
+      row.note = priorByIsbn
+        ? at("isbn", i + 2) + `This ISBN is already used in row ${prior} of this file.` + found(cell(r, "isbn"))
+        : at("title", i + 2) + `Row ${prior} in this file has the same title and author.` + ` You entered "${form.title}" by "${form.author}".`;
       return row;
     }
 
     const byI = byIsbn.get(isbn);
     const byT = byTitle.get(tKey);
     if (byI && byT && byI.id !== byT.id) {
-      errors.push("The ISBN matches one catalog book but the title and author match another.");
+      errors.push(at("isbn", i + 2) + "This ISBN belongs to one book in the catalog, but the title and author belong to a different book. Check which one you mean." + found(cell(r, "isbn")));
       return row;
     }
     const match = byI || byT;
@@ -1049,7 +1072,7 @@ const readImport = (text, existing, activeFor = () => 0) => {
     form.isbn = isbn;
 
     if (Number(form.copies) < activeFor(match.id)) {
-      errors.push(`${activeFor(match.id)} copies are currently borrowed. Total copies can't be lower than that.`);
+      errors.push(at("copies", i + 2) + `${activeFor(match.id)} copies are currently borrowed. Total copies can't be lower than that.` + found(cell(r, "copies")));
       return row;
     }
 
@@ -1060,7 +1083,9 @@ const readImport = (text, existing, activeFor = () => 0) => {
     if (row.changes.length) row.status = "update";
     else {
       row.status = "duplicate";
-      row.note = "Already in the catalog with the same details.";
+      row.note = byI
+        ? at("isbn", i + 2) + "This book is already in the catalog with the same details, so there is nothing to update." + found(cell(r, "isbn"))
+        : at("title", i + 2) + "This book is already in the catalog with the same details, so there is nothing to update." + ` You entered "${form.title}" by "${form.author}".`;
     }
     return row;
   });
@@ -1123,7 +1148,7 @@ function ImportModal({ books, activeFor, ask, onClose, onDone }) {
   };
 
   const detail = (r) =>
-    r.status === "invalid" ? r.errors.join(" ")
+    r.status === "invalid" ? r.errors.join("\n")
     : r.status === "update" ? `Will change: ${r.changes.join(", ")}.`
     : r.status === "duplicate" ? r.note
     : "Will be added to the catalog.";
@@ -1177,7 +1202,7 @@ function ImportModal({ books, activeFor, ask, onClose, onDone }) {
                       <span className="rounded-full px-2 py-0.5 text-[10.5px] font-bold text-white" style={{ background: m.color }}>{m.label}</span>
                       <span className="min-w-0 flex-1 truncate font-bold">Row {r.line} · {r.label}</span>
                     </div>
-                    <div className="mt-1 text-xs text-gray-700">{detail(r)}</div>
+                    <div className="mt-1 whitespace-pre-line text-xs text-gray-700">{detail(r)}</div>
                   </div>
                 );
               })}
@@ -2338,16 +2363,6 @@ function Analytics({ books, transactions, students }) {
   // 5. Department borrowing
   const byDept = tally(scoped.filter((r) => deptCat === "All" || r.category === deptCat), (r) => r.dept);
 
-  // 6. Unique borrowers by department
-  const uniq = new Map();
-  scoped.forEach((r) => {
-    if (!uniq.has(r.dept)) uniq.set(r.dept, new Set());
-    uniq.get(r.dept).add(r.email);
-  });
-  const uniqueByDept = [...uniq]
-    .map(([label, set]) => ({ label, value: set.size }))
-    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
-
   // 7. Engagement: unique borrowers / registered users in the department
   const roleOk = (rl) => role === "all" || rl === role;
   const eligible = new Map();
@@ -2468,15 +2483,12 @@ function Analytics({ books, transactions, students }) {
         </ChartCard>
 
         <ChartCard
+          wide
           title="Borrowing by Academic Department"
           purpose="Which departments generate the most borrowing transactions."
           controls={<CatSelect value={deptCat} onChange={setDeptCat} />}
         >
           <Donut rows={byDept} />
-        </ChartCard>
-
-        <ChartCard title="Unique Borrowers by Department" purpose="Distinct people who borrowed at least once. Repeat loans count once.">
-          <VBars rows={uniqueByDept} color="#0c7a43" unit="borrowers" />
         </ChartCard>
 
         <ChartCard
